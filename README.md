@@ -56,6 +56,7 @@ permanently.
 | `build/build.js` | Inlines the libs into every Code node and validates the graph. |
 | `test/*.test.js` | 207 tests, including a multi-week end-to-end campaign simulation. |
 | `tools/` | `preview-emails.js` and `simulate-campaign.js` — see your copy and your schedule before going live. |
+| `docs/SETUP.md` | **Start here.** Clearing the credential triangles, node by node. |
 | `docs/AIRTABLE_SETUP.md` | Token scopes, base setup, what the schema engine will and won't do. |
 | `docs/RUNBOOK.md` | Day-2 operations: deliverability, failure modes, SMTP variant, troubleshooting. |
 | `docs/QUALIFICATION.md` | Workflow 3: what it decides, why it doesn't write copy, and what it costs. |
@@ -94,10 +95,12 @@ Then:
    `data.records:write`, `schema.bases:read`, `schema.bases:write`, scoped to
    your base. Your table needs only `First Name`, `Company Name`, `Email`,
    `City`. Everything else is created for you. → `docs/AIRTABLE_SETUP.md`
-2. **n8n credentials** — create three:
+2. **n8n credentials** — four in total, and one of them clears 11 of the 15
+   warning triangles. Full node-by-node walkthrough in **`docs/SETUP.md`**:
    - `Airtable PAT (Header Auth)` → Name `Authorization`, Value `Bearer patXXXX…`
    - `Postmark Server Token (Header Auth)` → Name `X-Postmark-Server-Token`, Value `<token>`
    - `Outreach Inbox (IMAP)` → the mailbox replies land in
+   - `Anthropic API Key (Header Auth)` → Name `x-api-key` (Workflow 3 only)
 3. **Settings** — open the `Init Config` node in Workflow 1 and the `W2 Config`
    node in Workflow 2. Each opens on a `SETTINGS` block; type your values
    between the quote marks and save. That is the only editing either workflow
