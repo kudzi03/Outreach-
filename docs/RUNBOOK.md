@@ -142,12 +142,16 @@ dead addresses (raise verification strictness — set `ALLOW_RISKY=false`), or
 copy that looks like marketing. The templates avoid links, images and tracking
 for exactly this reason; adding a link to touch 1 will measurably hurt.
 
-### `Init Config: missing or invalid settings`
+### `Setup is incomplete...`
 
-The workflow refuses to run half-configured. The message names each missing
-variable. If your n8n has `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`, `$env` reads
-return nothing — either unset it, or hard-code values in `Init Config` and
-`W2 Config` (the only two nodes that touch the environment).
+The workflow refuses to run half-configured, and the message names every gap.
+Open the node it names (`Init Config` or `W2 Config`) — the `SETTINGS` block is
+the first thing in it — and fill those keys in.
+
+If you meant to supply values by environment variable and they aren't landing,
+your n8n is blocking `$env` (always the case on n8n Cloud; self-hosted, it's
+`N8N_BLOCK_ENV_ACCESS_IN_NODE=true`). Type the values into `SETTINGS` instead —
+they take precedence and always work.
 
 ---
 
@@ -224,7 +228,7 @@ sent still need to be caught and honoured.
 
 ### Change the daily cap
 
-Set `DAILY_SEND_CAP`. Above ~35 you'll also need to widen the send window or
+Set `DAILY_SEND_CAP` in the `SETTINGS` block of `Init Config`. Above ~35 you'll also need to widen the send window or
 narrow the stagger:
 
 ```

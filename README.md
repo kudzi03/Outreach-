@@ -48,7 +48,7 @@ permanently.
 | `src/lib/*.js` | The real logic: dates, templates, schema diffing, classification, queueing. Unit-tested. |
 | `src/nodes/*.js` | One file per n8n Code node. Thin wrappers over `src/lib`. |
 | `build/build.js` | Inlines the libs into every Code node and validates the graph. |
-| `test/*.test.js` | 144 tests, including a multi-week end-to-end campaign simulation. |
+| `test/*.test.js` | 164 tests, including a multi-week end-to-end campaign simulation. |
 | `tools/` | `preview-emails.js` and `simulate-campaign.js` — see your copy and your schedule before going live. |
 | `docs/AIRTABLE_SETUP.md` | Token scopes, base setup, what the schema engine will and won't do. |
 | `docs/RUNBOOK.md` | Day-2 operations: deliverability, failure modes, SMTP variant, troubleshooting. |
@@ -63,7 +63,7 @@ mechanically inlined:
 
 ```bash
 npm run build     # regenerate workflows/*.json from src/
-npm test          # 144 tests, incl. a check that the JSON matches src/
+npm test          # 164 tests, incl. a check that the JSON matches src/
 npm run verify    # both
 ```
 
@@ -91,8 +91,15 @@ Then:
    - `Airtable PAT (Header Auth)` → Name `Authorization`, Value `Bearer patXXXX…`
    - `Postmark Server Token (Header Auth)` → Name `X-Postmark-Server-Token`, Value `<token>`
    - `Outreach Inbox (IMAP)` → the mailbox replies land in
-3. **Environment** — copy `.env.example` into your n8n instance's environment.
-   Leave `DRY_RUN=true` for now.
+3. **Settings** — open the `Init Config` node in Workflow 1 and the `W2 Config`
+   node in Workflow 2. Each opens on a `SETTINGS` block; type your values
+   between the quote marks and save. That is the only editing either workflow
+   needs. Leave `DRY_RUN: 'true'` for now.
+
+   Prefer environment variables? Leave a `SETTINGS` value empty and it falls
+   back to an env var of the same name — see `.env.example`. **On n8n Cloud,
+   workflows cannot read environment variables at all**, so the `SETTINGS`
+   block is the supported path there.
 4. **Import** both files from `workflows/`. Re-select the credentials on the
    nodes that show a warning triangle (the JSON ships placeholder ids
    deliberately, so no secret is ever committed).
@@ -246,8 +253,8 @@ can never strand the other 29.
 
 ```
 $ npm test
-# tests 144
-# pass 144
+# tests 164
+# pass 164
 ```
 
 The suite covers the things that would be expensive to get wrong:
@@ -283,9 +290,13 @@ look:
 | `ALLOW_RISKY` | `false` | `true` sends to catch-all domains. Real trade — many remodelers run catch-all Workspace domains. |
 | `MANAGE_OPTIONAL_FIELDS` | `true` | `false` creates only the three required columns; threading and duplicate protection degrade. |
 
-All configuration is read in exactly two nodes — `Init Config` and `W2 Config` —
-so if your n8n runs with `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`, those are the only
-two places to hard-code values.
+All configuration lives in exactly two nodes — `Init Config` (Workflow 1) and
+`W2 Config` (Workflow 2). Each opens on a `SETTINGS` block; values you type
+there win, an env var of the same name is the fallback, and the documented
+default is the last resort. Nothing else in either workflow reads settings.
+
+`test/config.test.js` runs both of those nodes for real against a stubbed n8n —
+including the case where reading `$env` throws, which is what n8n Cloud does.
 
 ---
 

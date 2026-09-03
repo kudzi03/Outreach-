@@ -28,6 +28,11 @@ const OUT_DIR = path.join(ROOT, 'workflows');
 const EXPORT_MARKER = '// ---8<--- exports';
 const SHIM_START = '// ---8<--- node-only shim';
 const SHIM_END = '// ---8<--- end node-only shim';
+// A node can mark a region to be placed ABOVE the inlined libraries. The config
+// nodes use it so the block a human edits is the first thing on screen, not
+// buried under 200 lines of date maths.
+const HOIST_START = '// ---8<--- hoist';
+const HOIST_END = '// ---8<--- end hoist';
 
 /** Strip the CommonJS export block and any Node-only test shim. */
 function stripForInline(source) {
@@ -58,7 +63,17 @@ function readNode(name) {
   const requires = match
     ? match[1].split(',').map((s) => s.trim()).filter(Boolean)
     : [];
-  return { requires, body: stripForInline(raw.replace(/^\/\/[^\S\n]*@requires:.*$/m, '')) };
+
+  let rest = raw.replace(/^\/\/[^\S\n]*@requires:.*$/m, '');
+  let hoist = '';
+  const hStart = rest.indexOf(HOIST_START);
+  if (hStart !== -1) {
+    const hEnd = rest.indexOf(HOIST_END, hStart);
+    if (hEnd === -1) throw new Error(`Unterminated hoist block in ${name}`);
+    hoist = rest.slice(hStart + HOIST_START.length, hEnd).replace(/^\n/, '');
+    rest = rest.slice(0, hStart) + rest.slice(hEnd + HOIST_END.length);
+  }
+  return { requires, hoist, body: stripForInline(rest) };
 }
 
 /** Resolve lib dependencies (queue depends on dates) and keep a stable order. */
@@ -99,6 +114,7 @@ function assemble(name) {
     ` * ========================================================================= */\n`;
 
   const parts = ["'use strict';", banner];
+  if (node.hoist) parts.push(node.hoist);
   for (const lib of libs) {
     parts.push(`// ----- inlined: src/lib/${lib}.js -----`);
     parts.push(readLib(lib));
