@@ -157,6 +157,17 @@ they take precedence and always work.
 
 ## Common changes
 
+### You landed your first remodeler
+
+Open `Init Config` and raise `REMODELER_CLIENTS` from `0` to `1`. Touch 3
+changes from *"a 60-second video of how it works"* to *"…of what another
+remodeler set up"* on the next run. Same for `REMODELERS_INTERVIEWED` once
+you've had three real conversations — touch 2 stops guessing and starts
+asserting.
+
+Do not raise either number ahead of the fact. The copy is the only thing
+standing between you and a claim you can't answer a follow-up question about.
+
 ### Change the copy
 
 Edit `src/lib/templates.js`, then:

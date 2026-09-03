@@ -15,7 +15,10 @@ var msg = buildMessage(lead.touch, {
 }, {
   senderName: cfg.senderName,
   senderCompany: cfg.senderCompany,
-  senderPostalAddress: cfg.senderPostalAddress
+  senderPostalAddress: cfg.senderPostalAddress,
+  // Gates what the follow-ups are allowed to claim. See "Init Config".
+  remodelersInterviewed: cfg.remodelersInterviewed,
+  remodelerClients: cfg.remodelerClients
 });
 
 var headers = msg.headers.slice();

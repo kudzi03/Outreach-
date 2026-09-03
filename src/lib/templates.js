@@ -124,22 +124,60 @@ function greeting(lead) {
 }
 
 /**
+ * HONESTY GATE.
+ *
+ * Two lines of this sequence used to assert things about the sender's track
+ * record — "most guys tell me..." and "what two other remodelers set up". Both
+ * are strong copy and both are worthless if they are not true: the first reply
+ * that asks "which two?" ends the conversation, and in the US a fabricated
+ * client reference is an FTC deceptive-endorsement problem, not just a bad look.
+ *
+ * So the copy is generated FROM two facts the sender asserts, and it can only
+ * say what those numbers allow. Both default to 0, which produces copy that
+ * claims nothing at all. When the numbers become true, the claims appear.
+ */
+function proofOf(cfg) {
+  var conf = cfg || {};
+  var n = function (v) {
+    var num = Number(v);
+    return isFinite(num) && num > 0 ? Math.floor(num) : 0;
+  };
+  return {
+    interviewed: n(conf.remodelersInterviewed),
+    clients: n(conf.remodelerClients)
+  };
+}
+
+/**
  * Touch 2. Deliberately SHORTER than the opener, not longer.
  *
  * The prospect can see touch 1 directly beneath this one, so re-explaining the
  * premise wastes the only three seconds of attention a bump gets. What survives
- * from the original draft is the Tuesday/Wednesday/Friday detail — that is the
- * line a remodeler recognizes as their own week — and everything that merely
- * narrated it back to them is gone.
+ * is the Tuesday/Wednesday/Friday detail — the line a remodeler recognizes as
+ * their own week.
  *
- * It closes on a binary a busy person can answer in four words, including an
- * easy "no". Giving someone a graceful out is what makes them reply at all.
+ * With no interviews behind it, the same detail is framed as an explicit guess
+ * and the close becomes "Wrong, or about right?". That is not a weaker email:
+ * a stated guess invites correction, and being correctable is more disarming
+ * than borrowed authority. It also happens to be true.
  */
-function bodyFollowUp1(lead) {
+function bodyFollowUp1(lead, cfg) {
   var open = greeting(lead);
-  return open + (open ? 'r' : 'R') +
-    'eason I ask: most guys tell me the quote goes out Tuesday, they get pulled onto a job site Wednesday, and nobody\'s called the homeowner by Friday.' +
-    '\n\nIs that you, or have you got it handled?';
+  var proof = proofOf(cfg);
+  var body;
+
+  if (proof.interviewed >= 3) {
+    // Literally true at 3+: "most of the guys I talk to".
+    body = 'reason I ask: most guys I talk to say the quote goes out Tuesday, ' +
+      'they get pulled onto a job site Wednesday, and nobody\'s called the homeowner by Friday.' +
+      '\n\nIs that you, or have you got it handled?';
+  } else {
+    body = 'reason I ask: I\'d guess the quote goes out Tuesday, you\'re pulled onto ' +
+      'a job site Wednesday, and nobody\'s called the homeowner by Friday.' +
+      '\n\nWrong, or about right?';
+  }
+
+  return open + (open ? body : body.charAt(0).toUpperCase() + body.slice(1));
 }
 
 /**
@@ -147,13 +185,26 @@ function bodyFollowUp1(lead) {
  *
  * Avoids the two most-recognized closers in cold email — the false either/or
  * ("I'm guessing your pipeline is packed, or...") and "I'll stop bugging you!".
- * Both are template tells that a remodeler who gets ten of these a week will
- * clock instantly. This just closes the loop and leaves the door open.
+ *
+ * The offer names only as many customers as the sender actually has. At zero it
+ * offers to show the thing itself, which costs a little social proof and avoids
+ * a claim that cannot survive one follow-up question.
  */
-function bodyFollowUp2(lead) {
+function bodyFollowUp2(lead, cfg) {
   var open = greeting(lead);
-  return open + (open ? 'l' : 'L') + 'ast one from me.' +
-    '\n\nIf it\'s handled, ignore this. If it\'s not, just reply and I\'ll send a 60-second video of what two other remodelers set up.';
+  var proof = proofOf(cfg);
+  var offer;
+
+  if (proof.clients >= 3) offer = 'what a few other remodelers set up';
+  else if (proof.clients === 2) offer = 'what two other remodelers set up';
+  else if (proof.clients === 1) offer = 'what another remodeler set up';
+  else offer = 'how it works';
+
+  var body = 'last one from me.' +
+    '\n\nIf it\'s handled, ignore this. If it\'s not, just reply and I\'ll send a ' +
+    '60-second video of ' + offer + '.';
+
+  return open + (open ? body : body.charAt(0).toUpperCase() + body.slice(1));
 }
 
 /**
@@ -171,9 +222,9 @@ function buildMessage(touch, lead, cfg) {
   if (touch === 'email1') {
     msg = { subject: subjectForEmail1(row), textBody: bodyEmail1(row), isReply: false };
   } else if (touch === 'followup1') {
-    msg = { subject: replySubject(row.threadSubject, row), textBody: bodyFollowUp1(row), isReply: true };
+    msg = { subject: replySubject(row.threadSubject, row), textBody: bodyFollowUp1(row, conf), isReply: true };
   } else if (touch === 'followup2') {
-    msg = { subject: replySubject(row.threadSubject, row), textBody: bodyFollowUp2(row), isReply: true };
+    msg = { subject: replySubject(row.threadSubject, row), textBody: bodyFollowUp2(row, conf), isReply: true };
   } else {
     throw new Error('Unknown touch: ' + touch);
   }
@@ -204,6 +255,7 @@ if (typeof module !== 'undefined' && module.exports) {
     subjectForEmail1: subjectForEmail1,
     replySubject: replySubject,
     greeting: greeting,
+    proofOf: proofOf,
     bodyEmail1: bodyEmail1,
     bodyFollowUp1: bodyFollowUp1,
     bodyFollowUp2: bodyFollowUp2,

@@ -26,7 +26,11 @@ const lead = {
 const cfg = {
   senderName: process.env.SENDER_NAME || 'Nat Marlowe',
   senderCompany: process.env.SENDER_COMPANY || 'Marlowe Automations',
-  senderPostalAddress: process.env.SENDER_POSTAL_ADDRESS || '1200 W 6th St, Suite 200, Austin, TX 78703'
+  senderPostalAddress: process.env.SENDER_POSTAL_ADDRESS || '1200 W 6th St, Suite 200, Austin, TX 78703',
+  // Defaults to claiming nothing. --interviewed=5 --clients=2 to preview the
+  // copy you will be able to send once those are true.
+  remodelersInterviewed: Number(arg('interviewed', 0)),
+  remodelerClients: Number(arg('clients', 0))
 };
 
 const LABELS = {
@@ -39,6 +43,8 @@ const resolved = templates.firstNameOf(lead);
 console.log('='.repeat(74));
 console.log(`Lead: First Name=${JSON.stringify(lead['First Name'])}  Company=${JSON.stringify(lead['Company Name'])}`);
 console.log(`Personalization: ${resolved ? `first name resolved to "${resolved}"` : 'NO usable first name — fallback copy'}`);
+console.log(`Claims allowed: ${cfg.remodelersInterviewed} interviews, ${cfg.remodelerClients} clients` +
+  (cfg.remodelersInterviewed || cfg.remodelerClients ? '' : '  (copy claims nothing)'));
 console.log('='.repeat(74));
 
 for (const touch of ['email1', 'followup1', 'followup2']) {

@@ -54,7 +54,7 @@ permanently.
 | `src/lib/*.js` | The real logic: dates, templates, schema diffing, classification, queueing. Unit-tested. |
 | `src/nodes/*.js` | One file per n8n Code node. Thin wrappers over `src/lib`. |
 | `build/build.js` | Inlines the libs into every Code node and validates the graph. |
-| `test/*.test.js` | 200 tests, including a multi-week end-to-end campaign simulation. |
+| `test/*.test.js` | 207 tests, including a multi-week end-to-end campaign simulation. |
 | `tools/` | `preview-emails.js` and `simulate-campaign.js` — see your copy and your schedule before going live. |
 | `docs/AIRTABLE_SETUP.md` | Token scopes, base setup, what the schema engine will and won't do. |
 | `docs/RUNBOOK.md` | Day-2 operations: deliverability, failure modes, SMTP variant, troubleshooting. |
@@ -70,7 +70,7 @@ mechanically inlined:
 
 ```bash
 npm run build     # regenerate workflows/*.json from src/
-npm test          # 200 tests, incl. a check that the JSON matches src/
+npm test          # 207 tests, incl. a check that the JSON matches src/
 npm run verify    # both
 ```
 
@@ -135,17 +135,16 @@ Fallback when there is no usable first name:
 > for a bigger remodel, who handles following up?
 
 **Touch 2 — Day 4** (3 business days later, threaded `Re:`)
-> Hey [First Name] — reason I ask: most guys tell me the quote goes out Tuesday,
-> they get pulled onto a job site Wednesday, and nobody's called the homeowner by
-> Friday.
+> Hey [First Name] — reason I ask: I'd guess the quote goes out Tuesday, you're
+> pulled onto a job site Wednesday, and nobody's called the homeowner by Friday.
 >
-> Is that you, or have you got it handled?
+> Wrong, or about right?
 
 **Touch 3 — Day 8** (4 business days later, threaded `Re:`)
 > Hey [First Name] — last one from me.
 >
 > If it's handled, ignore this. If it's not, just reply and I'll send a 60-second
-> video of what two other remodelers set up.
+> video of how it works.
 
 The follow-ups are deliberately **shorter than the opener**. The prospect can see
 touch 1 directly beneath them, so re-explaining the premise wastes the three
@@ -159,6 +158,43 @@ the sentence. "Hey there," on a reply is the giveaway that it's a mail merge.
 template tells — "circling back", "I came across", "I'm guessing your pipeline
 is packed", "I'll stop bugging you", "leverage", "seamless" — or if a follow-up
 grows longer than the opener.
+
+### The copy only says what's true
+
+Two lines of a sequence like this want to assert a track record — *"most guys
+tell me..."* and *"what two other remodelers set up"*. Both are strong copy, and
+both are worthless if you don't have them: the first reply asking *"which two?"*
+ends the conversation, and in the US a fabricated client reference is an FTC
+deceptive-endorsement problem rather than just a bad look.
+
+So the follow-ups are generated **from two facts you assert**, in the `Init
+Config` node, and can only say what those numbers allow:
+
+```js
+REMODELERS_INTERVIEWED: '0',   // kitchen & bath owners you've actually spoken to
+REMODELER_CLIENTS: '0',        // remodelers actually running this today
+```
+
+| Setting | Touch 2 says | Touch 3 offers |
+|---|---|---|
+| `0` / `0` **(default)** | *"I'd guess the quote goes out Tuesday… Wrong, or about right?"* | *"a 60-second video of how it works"* |
+| `3+` interviews | *"most guys I talk to say… Is that you, or have you got it handled?"* | — |
+| `1` client | — | *"…what another remodeler set up"* |
+| `2` clients | — | *"…what two other remodelers set up"* |
+| `3+` clients | — | *"…what a few other remodelers set up"* |
+
+Both default to `0`, so the shipped copy claims nothing. Raise them the day they
+become true and the stronger lines appear on their own.
+
+Framing the detail as an explicit guess is **not** the weaker email. A stated
+guess invites correction, and being correctable is more disarming than borrowed
+authority — *"Wrong, or about right?"* gets answered.
+
+A test audits all three touches at the default setting against a list of
+unsupported-claim patterns (*"most guys"*, *"our clients"*, *"trusted by"*,
+*"proven"*, *"N% more"*, any customer count). It fails the build before an
+unearned claim can reach a prospect. A garbled count — `'lots'`, `-3`, blank —
+is read as zero, never as proof.
 
 Every message is plain text with **no links, no HTML and no open tracking**, and
 carries the sender's name, company and postal address plus a plain-English
@@ -269,8 +305,8 @@ can never strand the other 29.
 
 ```
 $ npm test
-# tests 200
-# pass 200
+# tests 207
+# pass 207
 ```
 
 The suite covers the things that would be expensive to get wrong:

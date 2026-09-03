@@ -45,12 +45,33 @@ var SETTINGS = {
   // Days to skip, comma separated: '2026-07-03,2026-11-26'
   CAMPAIGN_HOLIDAYS: '',
 
-  // --- 5. OPTIONAL ---------------------------------------------------------
+  // --- 5. WHAT YOU CAN HONESTLY CLAIM --------------------------------------
+  // The follow-up copy is generated FROM these two numbers and can only say
+  // what they allow. Leave them at 0 until they are true.
+  //
+  // A borrowed claim dies on the first reply that asks "which two?", and in the
+  // US a made-up client reference is an FTC deceptive-endorsement problem, not
+  // just a bad look. At 0/0 the copy claims nothing — it frames the same detail
+  // as an explicit guess, which reads as more honest, not weaker.
+
+  // Kitchen & bath owners you have ACTUALLY spoken to about this.
+  // 3+ unlocks "most guys I talk to say...". Below that, follow-up 1 says
+  // "I'd guess..." and closes on "Wrong, or about right?".
+  REMODELERS_INTERVIEWED: '0',
+
+  // Remodelers ACTUALLY running this today.
+  // 0 -> "a 60-second video of how it works"
+  // 1 -> "...of what another remodeler set up"
+  // 2 -> "...of what two other remodelers set up"
+  // 3+ -> "...of what a few other remodelers set up"
+  REMODELER_CLIENTS: '0',
+
+  // --- 6. OPTIONAL ---------------------------------------------------------
   SLACK_WEBHOOK_URL: '',        // blank = no Slack summary
   ALLOW_RISKY: '',              // default false. true = also mail catch-all domains.
   POSTMARK_MESSAGE_STREAM: '',  // default 'outbound'
 
-  // --- 6. SAFETY SWITCH ----------------------------------------------------
+  // --- 7. SAFETY SWITCH ----------------------------------------------------
   // true  = do everything EXCEPT actually send. Leave this on for your first run.
   // false = live.
   DRY_RUN: 'true'
@@ -136,6 +157,10 @@ var cfg = {
   senderPostalAddress: setting('SENDER_POSTAL_ADDRESS', ''),
   replyToEmail: setting('REPLY_TO_EMAIL', ''),
 
+  // --- Claims the copy is allowed to make ---------------------------------
+  remodelersInterviewed: settingNum('REMODELERS_INTERVIEWED', 0),
+  remodelerClients: settingNum('REMODELER_CLIENTS', 0),
+
   // --- Ops ----------------------------------------------------------------
   slackWebhookUrl: setting('SLACK_WEBHOOK_URL', ''),
   dryRun: settingBool('DRY_RUN', true)
@@ -187,6 +212,11 @@ console.log('[' + cfg.runId + '] ' + todayYMD + ' ' + cfg.timeZone +
   ' | cap ' + effectiveCap + '/' + cfg.dailyCap +
   ' | dryRun=' + cfg.dryRun +
   ' | run=' + shouldRun);
+console.log('[' + cfg.runId + '] claims: ' + cfg.remodelersInterviewed +
+  ' interviews, ' + cfg.remodelerClients + ' clients' +
+  (cfg.remodelersInterviewed || cfg.remodelerClients
+    ? ' — the copy will reference these. Make sure they are true.'
+    : ' — the copy claims nothing.'));
 
 return [{
   json: {
