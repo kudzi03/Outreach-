@@ -1,0 +1,16 @@
+{
+  "name": "kb-remodeler-outreach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production n8n + Airtable cold email system for Kitchen & Bath remodelers: 3-touch sequence, 30/day cap, self-provisioning Airtable schema, reply and opt-out guard.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "node build/build.js",
+    "check": "node build/build.js --check",
+    "test": "node --test test/*.test.js",
+    "verify": "npm run build && npm test",
+    "preview": "node tools/preview-emails.js",
+    "dry-run": "node tools/simulate-campaign.js"
+  },
+  "license": "UNLICENSED"
+}

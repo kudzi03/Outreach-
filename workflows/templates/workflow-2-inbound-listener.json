@@ -1,0 +1,847 @@
+{
+  "name": "K&B Outreach — 2. Inbound Listener & Opt-Out Guard",
+  "nodes": [
+    {
+      "parameters": {
+        "postProcessAction": "read",
+        "format": "resolved",
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\"]",
+          "forceReconnect": 60
+        }
+      },
+      "id": "IMAP: New Mail",
+      "name": "IMAP: New Mail",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "credentials": {
+        "imap": {
+          "id": "REPLACE_WITH_IMAP_CRED_ID",
+          "name": "Outreach Inbox (IMAP)"
+        }
+      },
+      "notes": "Primary trigger. Marks mail as read so a message is processed once.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "inbound-reply",
+        "options": {}
+      },
+      "id": "Webhook: Inbound Email",
+      "name": "Webhook: Inbound Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        200
+      ],
+      "webhookId": "b1b2c3d4-0000-4000-8000-000000000002",
+      "notes": "Alternative trigger: point Postmark/SendGrid inbound parsing here. Disable the IMAP node if you use this.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w2-01-config@@"
+      },
+      "id": "W2 Config",
+      "name": "W2 Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        100
+      ],
+      "notes": "Reads env vars and passes the inbound message through with cfg attached.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w2-02-normalize@@",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "Normalize Inbound",
+      "name": "Normalize Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        100
+      ],
+      "notes": "One shape from either trigger: IMAP item or Postmark inbound webhook body.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w2-03-classify@@",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "Classify Reply",
+      "name": "Classify Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        100
+      ],
+      "notes": "bounce / auto-reply / opt-out / replied. Quoted history is stripped first.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Over Replies",
+      "name": "Loop Over Replies",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        420,
+        100
+      ],
+      "notes": "One reply at a time. An IMAP poll can deliver several at once, and each needs its own Airtable lookup — batching them would cross the wires.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "All Replies Processed",
+      "name": "All Replies Processed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        640,
+        -80
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "ignore",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Actionable?",
+      "name": "Actionable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        220
+      ],
+      "notes": "Out-of-office autoresponders stop here — they must never be treated as replies.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Ignore (Autoresponder)",
+      "name": "Ignore (Autoresponder)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        860,
+        400
+      ],
+      "notes": "Status deliberately unchanged.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.searchUrl }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filterByFormula",
+              "value": "={{ $json.searchFormula }}"
+            },
+            {
+              "name": "pageSize",
+              "value": "10"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Find Lead in Airtable",
+      "name": "Find Lead in Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        160
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "notes": "Matches on the stored Message ID (In-Reply-To/References) first, then the sender address.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w2-04-resolve@@"
+      },
+      "id": "Resolve Match & Decide",
+      "name": "Resolve Match & Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        160
+      ],
+      "notes": "Status precedence: Do Not Contact > Replied > everything else. An opt-out is never downgraded.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c2",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "write",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "write"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c3",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "unmatched",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unmatched"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c4",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "noop",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "noop"
+            }
+          ]
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "Outcome",
+      "name": "Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1300,
+        160
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "PATCH",
+        "url": "={{ $json.patchUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patchBody) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Update Lead Status",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "Writes Replied / Do Not Contact / Invalid. Workflow 1 then ignores the record forever.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w2-05-alert@@",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "Build Alert",
+      "name": "Build Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        60
+      ],
+      "notes": null,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.shouldAlert }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Notify Humans?",
+      "name": "Notify Humans?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        60
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('W2 Config').first().json.cfg.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackPayload) }}",
+        "contentType": "json"
+      },
+      "id": "Slack: Reply Alert",
+      "name": "Slack: Reply Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2180,
+        -40
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Fires the moment a human replies — the whole point of the campaign.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c6",
+              "leftValue": "={{ $('Build Alert').item.json.sendSms }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "SMS Enabled?",
+      "name": "SMS Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        -40
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $('W2 Config').first().json.cfg.twilioAccountSid }}/Messages.json",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $('W2 Config').first().json.cfg.twilioTo }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $('W2 Config').first().json.cfg.twilioFrom }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $('Build Alert').item.json.smsBody }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "id": "Twilio: SMS Alert",
+      "name": "Twilio: SMS Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        -40
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Optional. Basic auth: username = Account SID, password = Auth Token.",
+      "notesInFlow": true,
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_WITH_TWILIO_CRED_ID",
+          "name": "Twilio (Basic Auth)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('W2 Config').first().json.cfg.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.alertText }) }}",
+        "contentType": "json"
+      },
+      "id": "Slack: Unmatched Reply",
+      "name": "Slack: Unmatched Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        280
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "A reply we could not match to a lead is a data problem worth a human look.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "No Change Needed",
+      "name": "No Change Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        440
+      ],
+      "notes": "Already Do Not Contact, or already Replied.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "content": "## Workflow 2 — Inbound Listener & Opt-Out Guard\n\nEvery inbound message is triaged into one of four verdicts **before** anything is written:\n\n| verdict | trigger | Airtable |\n|---|---|---|\n| `bounce` | DSN headers / mailer-daemon | `Status = Invalid` |\n| `auto` | out-of-office, `Auto-Submitted` | **nothing** — sequence continues |\n| `optout` | stop / unsubscribe / not interested / remove / wrong person | `Status = Do Not Contact` |\n| `replied` | anything else a human typed | `Status = Replied` + Slack/SMS |\n\nOpt-out matching runs on the **stripped** reply only. Our own signature says *reply \"stop\"* — matching the raw body would opt out every single person who answers.",
+        "height": 440,
+        "width": 1300,
+        "color": 4
+      },
+      "id": "Note 7",
+      "name": "Note 7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -520
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Safety guarantee\n`Replied` and `Do Not Contact` are terminal. Workflow 1 excludes them in its Airtable formula **and** re-checks each record immediately before sending. An opt-out is never downgraded back to `Replied`, whatever arrives later.",
+        "height": 240,
+        "width": 440,
+        "color": 3
+      },
+      "id": "Note 8",
+      "name": "Note 8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2180,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "IMAP: New Mail": {
+      "main": [
+        [
+          {
+            "node": "W2 Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: Inbound Email": {
+      "main": [
+        [
+          {
+            "node": "W2 Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "W2 Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Inbound": {
+      "main": [
+        [
+          {
+            "node": "Classify Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Reply": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Replies": {
+      "main": [
+        [
+          {
+            "node": "All Replies Processed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Actionable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actionable?": {
+      "main": [
+        [
+          {
+            "node": "Find Lead in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignore (Autoresponder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ignore (Autoresponder)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Resolve Match & Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Match & Decide": {
+      "main": [
+        [
+          {
+            "node": "Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outcome": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: Unmatched Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Change Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Build Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Alert": {
+      "main": [
+        [
+          {
+            "node": "Notify Humans?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Humans?": {
+      "main": [
+        [
+          {
+            "node": "Slack: Reply Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: Reply Alert": {
+      "main": [
+        [
+          {
+            "node": "SMS Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMS Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Twilio: SMS Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twilio: SMS Alert": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: Unmatched Reply": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Change Needed": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/New_York"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "kb-outreach"
+  },
+  "tags": [
+    {
+      "name": "kb-outreach"
+    }
+  ]
+}

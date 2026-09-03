@@ -1,0 +1,1575 @@
+{
+  "name": "K&B Outreach — 1. Outbound Dispatcher & Schema Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "Every Business Day 08:00",
+      "name": "Every Business Day 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        0
+      ],
+      "notes": "Mon-Fri 08:00 in the n8n instance timezone. Holidays are filtered in Init Config.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Manual Test Run",
+      "name": "Manual Test Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-01-config@@"
+      },
+      "id": "Init Config",
+      "name": "Init Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        100
+      ],
+      "notes": "Reads every env var, validates it, and decides whether today is a send day.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.shouldRun }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Is Today a Send Day?",
+      "name": "Is Today a Send Day?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -20,
+        100
+      ],
+      "notes": "Weekend / holiday / outside the send window -> stop cleanly.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-12-halt-notice@@"
+      },
+      "id": "Halt Notice",
+      "name": "Halt Notice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        260
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.cfg.airtableMetaBase }}/bases/{{ $json.cfg.baseId }}/tables",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Get Base Schema",
+      "name": "Get Base Schema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Metadata API. PAT needs schema.bases:read.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-02-schema-plan@@"
+      },
+      "id": "Plan Schema Changes",
+      "name": "Plan Schema Changes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        0
+      ],
+      "notes": "Diffs live schema vs. required. Emits only CREATE-field and additive choice PATCHes.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Schema Changes",
+      "name": "Loop Schema Changes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        640,
+        0
+      ],
+      "notes": "Output 0 = done (fires once), output 1 = one pending change.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.op }}",
+              "rightValue": "plan-summary",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Is a Change?",
+      "name": "Is a Change?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        860,
+        140
+      ],
+      "notes": "The plan summary rides through the loop with the calls; skip it here.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Apply Schema Change",
+      "name": "Apply Schema Change",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "notes": "PAT needs schema.bases:write. Creates fields and adds select choices; never deletes or retypes.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-03-schema-report@@"
+      },
+      "id": "Schema Report",
+      "name": "Schema Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        -140
+      ],
+      "notes": "Runs once. Aborts the run if any planned change failed.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-04-fetch-plan@@"
+      },
+      "id": "Plan Lead Fetch",
+      "name": "Plan Lead Fetch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        -140
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "offset",
+                    "value": "={{ $response.body.offset }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.offset }}",
+              "limitPagesFetched": true,
+              "maxRequestCount": 50
+            }
+          }
+        },
+        "url": "={{ $json.listUrl }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filterByFormula",
+              "value": "={{ $json.filterByFormula }}"
+            },
+            {
+              "name": "pageSize",
+              "value": "={{ $json.pageSize }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Fetch Candidate Leads",
+      "name": "Fetch Candidate Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        -140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Paginated. filterByFormula already excludes Replied / Do Not Contact / Invalid.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-05-build-queue@@"
+      },
+      "id": "Build Send Queue",
+      "name": "Build Send Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        -140
+      ],
+      "notes": "Eligibility + business-day gates + dedupe + 30/day cap + 15-20 min stagger.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.__empty }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Any Leads Queued?",
+      "name": "Any Leads Queued?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        -140
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Over Leads",
+      "name": "Loop Over Leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1960,
+        -140
+      ],
+      "notes": "One lead at a time. Output 0 = done, output 1 = loop.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.waitSeconds }}",
+        "unit": "seconds"
+      },
+      "id": "Stagger 15-20 min",
+      "name": "Stagger 15-20 min",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2400,
+        140
+      ],
+      "webhookId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "notes": "Randomized per-lead delay computed in Build Send Queue. First lead waits 0s.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $('Init Config').first().json.cfg.airtableApiBase }}/{{ $('Init Config').first().json.cfg.baseId }}/{{ encodeURIComponent($('Init Config').first().json.cfg.tableName) }}/{{ $json.recordId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Re-read Lead Record",
+      "name": "Re-read Lead Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "notes": "SAFETY: re-read immediately before sending, so a reply that landed during the stagger wins.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-06-guard@@"
+      },
+      "id": "Guard: Re-read & Re-check",
+      "name": "Guard: Re-read & Re-check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        140
+      ],
+      "notes": "Blocks the send if the record went terminal, already advanced, or was already sent today.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c4",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "verify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "verify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c5",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c6",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "invalid",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c7",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "skip",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "Guard Verdict",
+      "name": "Guard Verdict",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3060,
+        140
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.verifyUrl }}"
+      },
+      "id": "Verify Email (MillionVerifier)",
+      "name": "Verify Email (MillionVerifier)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3280,
+        -60
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 4000,
+      "alwaysOutputData": true,
+      "notes": "Key travels in the query string per MillionVerifier v3. Failures fall through as data.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-07-verify-decision@@"
+      },
+      "id": "Verification Gate",
+      "name": "Verification Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3500,
+        -60
+      ],
+      "notes": "ok -> send. catch_all/unknown -> Risky. invalid/disposable -> Invalid. API error -> defer, status untouched.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c8",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c9",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "invalid",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c10",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "defer",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "defer"
+            }
+          ]
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "Verification Verdict",
+      "name": "Verification Verdict",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3720,
+        -60
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c11",
+                    "leftValue": "={{ $json.touch }}",
+                    "rightValue": "email1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "email1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c12",
+                    "leftValue": "={{ $json.touch }}",
+                    "rightValue": "followup1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "followup1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c13",
+                    "leftValue": "={{ $json.touch }}",
+                    "rightValue": "followup2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "followup2"
+            }
+          ]
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "Route by Touch",
+      "name": "Route by Touch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3940,
+        140
+      ],
+      "notes": "The multi-stage sending switch. Status already decided which touch is due.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Case: Email 1 (Day 1)",
+      "name": "Case: Email 1 (Day 1)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        0
+      ],
+      "notes": "Status New/blank -> touch 1.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Case: Follow-up 1 (Day 4)",
+      "name": "Case: Follow-up 1 (Day 4)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        140
+      ],
+      "notes": "Status Sent Email 1 + >= 3 business days.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Case: Follow-up 2 (Day 8)",
+      "name": "Case: Follow-up 2 (Day 8)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        280
+      ],
+      "notes": "Status Sent Follow-up 1 + >= 4 business days.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-08-build-email@@"
+      },
+      "id": "Build Email",
+      "name": "Build Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4380,
+        140
+      ],
+      "notes": "Plain text, no tracking. Follow-ups carry In-Reply-To / References.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c14",
+              "leftValue": "={{ $json.dryRun }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Dry Run?",
+      "name": "Dry Run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4600,
+        140
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('Init Config').first().json.cfg.postmarkEndpoint }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.postmarkBody) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Send via Postmark",
+      "name": "Send via Postmark",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4820,
+        60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_POSTMARK_CRED_ID",
+          "name": "Postmark Server Token (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 8000,
+      "alwaysOutputData": true,
+      "notes": "Header credential: X-Postmark-Server-Token. See docs/RUNBOOK.md for the SMTP variant.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-09-send-result@@"
+      },
+      "id": "Parse Send Result",
+      "name": "Parse Send Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        140
+      ],
+      "notes": "Reconstructs the RFC Message-ID (<uuid@mtasv.net>) so follow-ups can thread.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-10-commit@@"
+      },
+      "id": "Build Airtable Commit",
+      "name": "Build Airtable Commit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5260,
+        140
+      ],
+      "notes": "One PATCH per lead for every outcome: sent / invalid / failed / skipped.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "PATCH",
+        "url": "={{ $json.patchUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patchBody) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Commit to Airtable",
+      "name": "Commit to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5480,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "Status + Last Contacted Date + Idempotency Key in ONE write. typecast:true lets a text Status column work too.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w1-11-summary@@"
+      },
+      "id": "Run Summary",
+      "name": "Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        -160
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c15",
+              "leftValue": "={{ $json.notify }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Slack Configured?",
+      "name": "Slack Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2620,
+        -160
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('Init Config').first().json.cfg.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackPayload) }}",
+        "contentType": "json"
+      },
+      "id": "Post Run Summary to Slack",
+      "name": "Post Run Summary to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2840,
+        -160
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Slack incoming webhook. Optional — leave SLACK_WEBHOOK_URL empty to skip.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "content": "## Workflow 1 — Outbound Dispatcher & Schema Engine\n\n**Flow:** schedule → config/preflight → Airtable schema check & auto-create → fetch eligible leads → build the capped, staggered queue → per lead: wait → **re-read** → guard → verify → switch by touch → send → commit.\n\n**Two safety guarantees**\n1. `filterByFormula` never even loads a `Replied` / `Do Not Contact` / `Invalid` record.\n2. Every lead is re-read from Airtable *immediately before* its send, so a reply that arrives during the 15-20 min stagger still cancels the email.\n\n**Do not edit Code nodes here.** They are generated from `src/` by `npm run build`.",
+        "height": 360,
+        "width": 1180,
+        "color": 4
+      },
+      "id": "Note 16",
+      "name": "Note 16",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Daily cap\n30/day, enforced in **Build Send Queue** — after dedupe, before the loop. Follow-ups are sent before new leads, so a backlog never starves live threads. Overflow rolls to the next business day.",
+        "height": 220,
+        "width": 400,
+        "color": 5
+      },
+      "id": "Note 17",
+      "name": "Note 17",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Failure policy\n`Send via Postmark` and `Commit to Airtable` continue on error.\n\n- **Send failed** → `Last Error` written, **Status unchanged** → retried next run.\n- **Verifier down** → lead deferred, **Status unchanged**. An outage never burns a lead.\n- **Verified Invalid/Risky** → `Status = Invalid`, lead halted.",
+        "height": 260,
+        "width": 420,
+        "color": 3
+      },
+      "id": "Note 18",
+      "name": "Note 18",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4820,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Every Business Day 08:00": {
+      "main": [
+        [
+          {
+            "node": "Init Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Run": {
+      "main": [
+        [
+          {
+            "node": "Init Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Config": {
+      "main": [
+        [
+          {
+            "node": "Is Today a Send Day?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Today a Send Day?": {
+      "main": [
+        [
+          {
+            "node": "Get Base Schema",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Halt Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Base Schema": {
+      "main": [
+        [
+          {
+            "node": "Plan Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Schema Changes": {
+      "main": [
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Schema Changes": {
+      "main": [
+        [
+          {
+            "node": "Schema Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is a Change?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is a Change?": {
+      "main": [
+        [
+          {
+            "node": "Apply Schema Change",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Schema Change": {
+      "main": [
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schema Report": {
+      "main": [
+        [
+          {
+            "node": "Plan Lead Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Lead Fetch": {
+      "main": [
+        [
+          {
+            "node": "Fetch Candidate Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Candidate Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Send Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Send Queue": {
+      "main": [
+        [
+          {
+            "node": "Any Leads Queued?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Leads Queued?": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Leads": {
+      "main": [
+        [
+          {
+            "node": "Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stagger 15-20 min",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stagger 15-20 min": {
+      "main": [
+        [
+          {
+            "node": "Re-read Lead Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-read Lead Record": {
+      "main": [
+        [
+          {
+            "node": "Guard: Re-read & Re-check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Re-read & Re-check": {
+      "main": [
+        [
+          {
+            "node": "Guard Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard Verdict": {
+      "main": [
+        [
+          {
+            "node": "Verify Email (MillionVerifier)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by Touch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Airtable Commit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Airtable Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Email (MillionVerifier)": {
+      "main": [
+        [
+          {
+            "node": "Verification Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verification Gate": {
+      "main": [
+        [
+          {
+            "node": "Verification Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verification Verdict": {
+      "main": [
+        [
+          {
+            "node": "Route by Touch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Airtable Commit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Airtable Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Touch": {
+      "main": [
+        [
+          {
+            "node": "Case: Email 1 (Day 1)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Case: Follow-up 1 (Day 4)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Case: Follow-up 2 (Day 8)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Case: Email 1 (Day 1)": {
+      "main": [
+        [
+          {
+            "node": "Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Case: Follow-up 1 (Day 4)": {
+      "main": [
+        [
+          {
+            "node": "Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Case: Follow-up 2 (Day 8)": {
+      "main": [
+        [
+          {
+            "node": "Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email": {
+      "main": [
+        [
+          {
+            "node": "Dry Run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dry Run?": {
+      "main": [
+        [
+          {
+            "node": "Send via Postmark",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Postmark": {
+      "main": [
+        [
+          {
+            "node": "Parse Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Send Result": {
+      "main": [
+        [
+          {
+            "node": "Build Airtable Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Airtable Commit": {
+      "main": [
+        [
+          {
+            "node": "Commit to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Slack Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Configured?": {
+      "main": [
+        [
+          {
+            "node": "Post Run Summary to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "timezone": "America/New_York"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "kb-outreach"
+  },
+  "tags": [
+    {
+      "name": "kb-outreach"
+    }
+  ]
+}
