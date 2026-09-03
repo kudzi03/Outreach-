@@ -1,0 +1,993 @@
+{
+  "name": "K&B Outreach — 3. Lead Qualifier (optional)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "Every Hour",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        0
+      ],
+      "notes": "Chews through unqualified leads in the background. Safe to run any hour.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Manual Test Run",
+      "name": "Manual Test Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-01-config@@"
+      },
+      "id": "W3 Config",
+      "name": "W3 Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        100
+      ],
+      "notes": "The only node you edit. Must match Workflow 1 on base and table.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.cfg.airtableMetaBase }}/bases/{{ $json.cfg.baseId }}/tables",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Get Base Schema",
+      "name": "Get Base Schema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "PAT needs schema.bases:read.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-02-schema-plan@@"
+      },
+      "id": "Plan Fit Columns",
+      "name": "Plan Fit Columns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        100
+      ],
+      "notes": "Creates Fit / Fit Reason / Fit Checked At if missing. Touches nothing else.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Schema Changes",
+      "name": "Loop Schema Changes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        420,
+        100
+      ],
+      "notes": "Output 0 = done (fires once), output 1 = one pending change.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.op }}",
+              "rightValue": "plan-summary",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Is a Change?",
+      "name": "Is a Change?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        240
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Apply Fit Column Change",
+      "name": "Apply Fit Column Change",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "notes": "PAT needs schema.bases:write.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-03-schema-report@@"
+      },
+      "id": "Fit Columns Ready",
+      "name": "Fit Columns Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -40
+      ],
+      "notes": "Runs once. Aborts if a column could not be created.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "offset",
+                    "value": "={{ $response.body.offset }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.offset }}",
+              "limitPagesFetched": true,
+              "maxRequestCount": 20
+            }
+          }
+        },
+        "url": "={{ $json.listUrl }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filterByFormula",
+              "value": "={{ $json.filterByFormula }}"
+            },
+            {
+              "name": "pageSize",
+              "value": "={{ $json.pageSize }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Fetch Unqualified Leads",
+      "name": "Fetch Unqualified Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        -40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Only leads not yet judged AND not yet contacted.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-04-build-queue@@"
+      },
+      "id": "Build Qualification Queue",
+      "name": "Build Qualification Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        -40
+      ],
+      "notes": "Resolves a URL per lead (Website column, else email domain). Drops free mailboxes and same-domain duplicates.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.__empty }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Anything to Check?",
+      "name": "Anything to Check?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        -40
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Over Leads",
+      "name": "Loop Over Leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1520,
+        -40
+      ],
+      "notes": "One lead at a time. Output 0 = done, output 1 = loop.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "fetch",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Readable?",
+      "name": "Readable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        100
+      ],
+      "notes": "Leads with no resolvable site skip straight to a stored \"Unsure\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {
+          "timeout": "={{ $('W3 Config').first().json.cfg.fetchTimeoutMs }}",
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "neverError": true
+            }
+          }
+        },
+        "url": "={{ $json.qualifyUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; LeadQualifier/1.0)"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml"
+            }
+          ]
+        }
+      },
+      "id": "Fetch Website",
+      "name": "Fetch Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        20
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "A timeout, 404 or blocked scraper arrives as data, not a crash.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-05-extract-page@@"
+      },
+      "id": "Read Page",
+      "name": "Read Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        20
+      ],
+      "notes": "HTML -> text, capped at PAGE_CHAR_LIMIT. Too thin to judge -> Unsure.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "classify",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Enough to Judge?",
+      "name": "Enough to Judge?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        20
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('W3 Config').first().json.cfg.claudeEndpoint }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "={{ $('W3 Config').first().json.cfg.claudeVersion }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claudeRequest) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Ask Claude",
+      "name": "Ask Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        -60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_ANTHROPIC_CRED_ID",
+          "name": "Anthropic API Key (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "Header credential: x-api-key. Classifies the page only — it never writes email copy.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-06-parse-verdict@@"
+      },
+      "id": "Parse Verdict",
+      "name": "Parse Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        -60
+      ],
+      "notes": "Any failure resolves to Unsure, never No. An outage must not delete leads.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-07-commit@@"
+      },
+      "id": "Build Fit Commit",
+      "name": "Build Fit Commit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2620,
+        180
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "PATCH",
+        "url": "={{ $json.patchUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patchBody) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Save Fit to Airtable",
+      "name": "Save Fit to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2840,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "Writes Fit / Fit Reason / Fit Checked At. Nothing else is touched.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "@@code:w3-08-summary@@"
+      },
+      "id": "Qualification Summary",
+      "name": "Qualification Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        -180
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.notify }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Slack Configured?",
+      "name": "Slack Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        -180
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('W3 Config').first().json.cfg.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackPayload) }}",
+        "contentType": "json"
+      },
+      "id": "Post Summary to Slack",
+      "name": "Post Summary to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2180,
+        -180
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "content": "## Workflow 3 — Lead Qualifier  *(optional)*\n\nReads each lead's website and writes a **Fit** verdict to Airtable. It decides **who** you email — it never writes a word of **what** you email.\n\n**Why not AI-personalized copy?** A generated opener (\"I came across your portfolio of transitional kitchen remodels...\") is the most recognizable pattern in cold email — it reads as *more* of a pitch, not less. And anything a model writes into a live send is untestable. Targeting is where the leverage is at 30 sends/day: not emailing a roofer beats any phrasing.\n\n**Fail-open, everywhere.** A dead site, a timeout, an API outage → `Unsure`, which is still contacted. Only an explicit `No` is skipped. Never running this workflow at all leaves Workflow 1 behaving exactly as before.",
+        "height": 400,
+        "width": 1300,
+        "color": 4
+      },
+      "id": "Note 6",
+      "name": "Note 6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Where the URL comes from\n1. a `Website` column, if you have one\n2. otherwise the email domain — `dana@mapleridgekitchens.com` → `mapleridgekitchens.com`\n\nFree mailboxes (gmail, yahoo, …) tell us nothing, so those leads are recorded as `Unsure` and contacted normally.",
+        "height": 240,
+        "width": 420,
+        "color": 5
+      },
+      "id": "Note 7",
+      "name": "Note 7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Cost\n`claude-sonnet-5` at low effort, ~1.5k input tokens per page:\n\n**≈ $4 per 1,000 leads.**\n\nCheaper than the verification credits saved on leads that were never a fit.",
+        "height": 200,
+        "width": 420,
+        "color": 3
+      },
+      "id": "Note 8",
+      "name": "Note 8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2620,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "W3 Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Run": {
+      "main": [
+        [
+          {
+            "node": "W3 Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "W3 Config": {
+      "main": [
+        [
+          {
+            "node": "Get Base Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Base Schema": {
+      "main": [
+        [
+          {
+            "node": "Plan Fit Columns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Fit Columns": {
+      "main": [
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Schema Changes": {
+      "main": [
+        [
+          {
+            "node": "Fit Columns Ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is a Change?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is a Change?": {
+      "main": [
+        [
+          {
+            "node": "Apply Fit Column Change",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Fit Column Change": {
+      "main": [
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fit Columns Ready": {
+      "main": [
+        [
+          {
+            "node": "Fetch Unqualified Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Unqualified Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Qualification Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qualification Queue": {
+      "main": [
+        [
+          {
+            "node": "Anything to Check?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything to Check?": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Qualification Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Leads": {
+      "main": [
+        [
+          {
+            "node": "Qualification Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Readable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Readable?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fit Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Website": {
+      "main": [
+        [
+          {
+            "node": "Read Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Page": {
+      "main": [
+        [
+          {
+            "node": "Enough to Judge?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enough to Judge?": {
+      "main": [
+        [
+          {
+            "node": "Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fit Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Verdict": {
+      "main": [
+        [
+          {
+            "node": "Build Fit Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Fit Commit": {
+      "main": [
+        [
+          {
+            "node": "Save Fit to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Fit to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualification Summary": {
+      "main": [
+        [
+          {
+            "node": "Slack Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Configured?": {
+      "main": [
+        [
+          {
+            "node": "Post Summary to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "timezone": "America/New_York"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "kb-outreach"
+  },
+  "tags": [
+    {
+      "name": "kb-outreach"
+    }
+  ]
+}

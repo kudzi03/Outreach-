@@ -15,7 +15,10 @@ return [{
     fieldsCreated: schema.fieldsCreated || [],
     notes: schema.notes || [],
     listUrl: cfg.airtableApiBase + '/' + cfg.baseId + '/' + encodeURIComponent(cfg.tableName),
-    filterByFormula: fetchFormula(),
+    // Only reference {Fit} when the column exists. Workflow 3 is optional, and
+    // a formula naming a missing field makes Airtable reject the whole request.
+    filterByFormula: fetchFormula({ excludeUnfit: schema.hasFitField === true }),
+    excludingUnfit: schema.hasFitField === true,
     pageSize: 100,
     effectiveCap: boot.effectiveCap
   }

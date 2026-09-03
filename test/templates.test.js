@@ -39,20 +39,85 @@ test('Email 1 falls back to the company variant when there is no first name', ()
   ), body.slice(0, 200));
 });
 
-test('Follow-up 1 carries the brief copy and asks the 48-hour question', () => {
+test('Follow-up 1 keeps the Tuesday/Wednesday/Friday detail and ends on a binary', () => {
   const body = t.buildMessage('followup1', lead(), CFG).textBody;
-  assert.ok(body.startsWith('Hey Dana, reason I asked is most kitchen & bath guys I talk to'));
-  assert.ok(body.includes('estimating a project on Tuesday'));
-  assert.ok(body.includes('already signed with someone else who checked in first'));
-  assert.ok(body.includes('automatically after 48 hours'));
+  assert.ok(body.startsWith('Hey Dana — reason I ask:'), body.slice(0, 60));
+  // The one line a remodeler recognizes as their own week.
+  assert.ok(body.includes('Tuesday'));
+  assert.ok(body.includes('job site Wednesday'));
+  assert.ok(body.includes('by Friday'));
+  // An easy "no" is what makes a busy person reply at all.
+  assert.ok(body.includes('Is that you, or have you got it handled?'));
 });
 
-test('Follow-up 2 carries the brief copy and the break-up line', () => {
+test('Follow-up 2 breaks up without the two most-recognized closers', () => {
   const body = t.buildMessage('followup2', lead(), CFG).textBody;
-  assert.ok(body.includes('packed for the next 6 months'));
-  assert.ok(body.includes('60-second video showing how two other remodelers automated it'));
-  assert.ok(body.includes('Otherwise, I'));
-  assert.ok(body.includes('stop bugging you!'));
+  assert.ok(body.startsWith('Hey Dana — last one from me.'));
+  assert.ok(body.includes('60-second video'));
+  assert.ok(body.includes('two other remodelers'));
+  assert.strictEqual(/guessing (either )?your pipeline/i.test(body), false,
+    'the false either/or is a template tell');
+  assert.strictEqual(/stop bugging you/i.test(body), false,
+    'the single most-used closer in cold email');
+});
+
+test('a follow-up is SHORTER than the opener — the thread already has the context', () => {
+  const strip = (touch) => t.buildMessage(touch, lead({
+    threadSubject: 'quick question / Maple Ridge Kitchens', messageId: '<a@b>'
+  }), CFG).textBody.split('\n\n--')[0];
+
+  const t1 = strip('email1').length;
+  const fu1 = strip('followup1').length;
+  const fu2 = strip('followup2').length;
+
+  assert.ok(fu1 < 260, `follow-up 1 is ${fu1} chars — a bump must stay short`);
+  assert.ok(fu2 < 200, `follow-up 2 is ${fu2} chars`);
+  assert.ok(fu2 < fu1, 'the break-up should be the shortest message of the three');
+  assert.ok(t1 < 200, `the opener is ${t1} chars`);
+});
+
+test('no touch uses a phrase that reads as template filler', () => {
+  // If a rewrite ever reintroduces one of these, this fails. They are the
+  // phrases a contractor who gets ten of these a week recognizes instantly.
+  const SLOP = [
+    /hope (this|you)('| a)?\s*(email|message)?\s*finds you/i,
+    /i wanted to reach out/i,
+    /i came across/i,
+    /i noticed (that )?your/i,
+    /circling back/i,
+    /bumping this/i,
+    /just following up/i,
+    /touch(ing)? base/i,
+    /at your earliest convenience/i,
+    /game.?changer/i,
+    /revolutioni[sz]e/i,
+    /seamless/i,
+    /leverage/i,
+    /in today'?s (fast|competitive|digital)/i,
+    /impressed by/i,
+    /love what you'?re doing/i,
+    /i'?m guessing (either )?your/i,
+    /synerg/i,
+    /cutting.?edge/i,
+    /best.?in.?class/i
+  ];
+  for (const touch of ['email1', 'followup1', 'followup2']) {
+    const body = t.buildMessage(touch, lead({ threadSubject: 'x', messageId: '<a@b>' }), CFG).textBody;
+    for (const pattern of SLOP) {
+      assert.strictEqual(pattern.test(body), false, `${touch} contains template filler: ${pattern}`);
+    }
+  }
+});
+
+test('follow-ups read as a thread reply, not a fresh mail merge', () => {
+  // With no usable first name a bump must NOT open on a generic greeting —
+  // "Hey there," on a reply is the giveaway. It opens on the sentence instead.
+  for (const touch of ['followup1', 'followup2']) {
+    const body = t.buildMessage(touch, { 'Company Name': 'X', threadSubject: 'x' }, CFG).textBody;
+    assert.strictEqual(/^hey there/i.test(body), false, `${touch} falls back to "Hey there,"`);
+    assert.strictEqual(/^(hi|hello|dear)\b/i.test(body), false, `${touch} opens on a generic greeting`);
+    assert.ok(/^[A-Z]/.test(body), `${touch} should start with a capital: ${body.slice(0, 40)}`);
+  }
 });
 
 /* -------------------------------------------------------------- threading */
@@ -130,9 +195,9 @@ test('with neither name the copy still reads like a sentence', () => {
   assert.strictEqual(t.buildMessage('email1', {}, CFG).subject, 'quick question');
 });
 
-test('follow-ups greet generically when there is no usable first name', () => {
-  assert.ok(t.buildMessage('followup1', { 'Company Name': 'X' }, CFG).textBody.startsWith('Hey there,'));
-  assert.ok(t.buildMessage('followup2', { 'Company Name': 'X' }, CFG).textBody.startsWith('Hey there,'));
+test('follow-ups use the first name when there is one', () => {
+  assert.ok(t.buildMessage('followup1', lead(), CFG).textBody.startsWith('Hey Dana — '));
+  assert.ok(t.buildMessage('followup2', lead(), CFG).textBody.startsWith('Hey Dana — '));
 });
 
 /* ---------------------------------------------------- compliance & hygiene */
@@ -158,7 +223,7 @@ test('no touch contains a link or an HTML tag', () => {
 test('bodies stay short enough to read on a phone on a job site', () => {
   for (const touch of ['email1', 'followup1', 'followup2']) {
     const body = t.buildMessage(touch, lead({ threadSubject: 'x' }), CFG).textBody;
-    assert.ok(body.length < 900, `${touch} is ${body.length} chars — too long for cold outreach`);
+    assert.ok(body.length < 500, `${touch} is ${body.length} chars including the footer`);
   }
 });
 

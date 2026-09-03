@@ -64,6 +64,7 @@ function normalizeRecord(record) {
     messageId: qTrim(f['Message ID']),
     threadSubject: qTrim(f['Thread Subject']),
     idempotencyKey: qTrim(f['Idempotency Key']),
+    fit: qTrim(f['Fit']),
     // Keep the raw fields so nothing downstream has to re-fetch.
     _fields: f
   };
@@ -103,6 +104,14 @@ function evaluateLead(lead, ctx) {
 
   if (!lead.email) {
     return { eligible: false, touch: touch, reason: 'No email address.', waitedBusinessDays: null };
+  }
+
+  // Workflow 3's verdict. FAIL-OPEN: only an explicit "No" is skipped, so a
+  // blank column (never qualified) or "Unsure" is contacted exactly as before.
+  // A lead already mid-sequence is not pulled out — a fit verdict is a list
+  // decision, and only a reply or an opt-out stops a live thread.
+  if (qTrim(lead.fit).toLowerCase() === 'no' && touch === 'email1') {
+    return { eligible: false, touch: touch, reason: 'Disqualified by the qualification pass (Fit = No).', waitedBusinessDays: null };
   }
 
   var required = QUEUE_WAIT_BUSINESS_DAYS[touch];
@@ -260,10 +269,15 @@ function buildQueue(records, ctx) {
  * small. The real safety guarantee is enforced again per-record right before
  * sending — this formula is the cheap first line, not the only one.
  */
-function fetchFormula() {
+function fetchFormula(opts) {
+  var o = opts || {};
+  // Only added when the Fit column actually exists — referencing a missing
+  // field makes Airtable reject the whole formula.
+  var fitClause = o.excludeUnfit ? '  {Fit} != "No",' : '';
   return [
     'AND(',
     '  {Email} != "",',
+    fitClause,
     '  NOT(OR(',
     '    {Status} = "Replied",',
     '    {Status} = "Do Not Contact",',
@@ -313,6 +327,9 @@ function guardBeforeSend(freshRecord, intent, ctx) {
   }
   if (!lead.email) {
     return { proceed: false, code: 'no-email', reason: 'Email was cleared while queued.' };
+  }
+  if (qTrim(lead.fit).toLowerCase() === 'no' && intent.touch === 'email1') {
+    return { proceed: false, code: 'unfit', reason: 'Marked Fit = No while queued.' };
   }
   var lastYMD = lead.lastContactedDate ? zonedYMD(lead.lastContactedDate, tz) : null;
   if (lastYMD && lastYMD === zonedYMD(now, tz)) {

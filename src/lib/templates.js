@@ -113,18 +113,47 @@ function bodyEmail1(lead) {
   return 'Quick question for ' + who + '—when you guys send out a quote for a bigger remodel, who handles following up?';
 }
 
-/** The brief gives no company fallback for follow-ups, so use "Hey there". */
+/**
+ * Follow-ups are replies inside a thread the prospect can see. A fresh
+ * "Hey there," greeting on a bump reads like a mail merge, so with no usable
+ * first name we simply open on the sentence.
+ */
 function greeting(lead) {
   var first = firstNameOf(lead);
-  return first ? 'Hey ' + first + ',' : 'Hey there,';
+  return first ? 'Hey ' + first + ' — ' : '';
 }
 
+/**
+ * Touch 2. Deliberately SHORTER than the opener, not longer.
+ *
+ * The prospect can see touch 1 directly beneath this one, so re-explaining the
+ * premise wastes the only three seconds of attention a bump gets. What survives
+ * from the original draft is the Tuesday/Wednesday/Friday detail — that is the
+ * line a remodeler recognizes as their own week — and everything that merely
+ * narrated it back to them is gone.
+ *
+ * It closes on a binary a busy person can answer in four words, including an
+ * easy "no". Giving someone a graceful out is what makes them reply at all.
+ */
 function bodyFollowUp1(lead) {
-  return greeting(lead) + ' reason I asked is most kitchen & bath guys I talk to say their biggest headache is estimating a project on Tuesday, getting pulled onto a job site on Wednesday, and completely forgetting to check back in by Friday. By the time they call, the homeowner already signed with someone else who checked in first.\n\nDo you guys have something running that texts/emails them automatically after 48 hours, or is it mostly manual right now?';
+  var open = greeting(lead);
+  return open + (open ? 'r' : 'R') +
+    'eason I ask: most guys tell me the quote goes out Tuesday, they get pulled onto a job site Wednesday, and nobody\'s called the homeowner by Friday.' +
+    '\n\nIs that you, or have you got it handled?';
 }
 
+/**
+ * Touch 3. The break-up.
+ *
+ * Avoids the two most-recognized closers in cold email — the false either/or
+ * ("I'm guessing your pipeline is packed, or...") and "I'll stop bugging you!".
+ * Both are template tells that a remodeler who gets ten of these a week will
+ * clock instantly. This just closes the loop and leaves the door open.
+ */
 function bodyFollowUp2(lead) {
-  return greeting(lead) + ' I’m guessing either your pipeline is completely packed for the next 6 months, or you’ve already got a system handling quote follow-ups?\n\nIf not, let me know—happy to send over a 60-second video showing how two other remodelers automated it. Otherwise, I’ll stop bugging you!';
+  var open = greeting(lead);
+  return open + (open ? 'l' : 'L') + 'ast one from me.' +
+    '\n\nIf it\'s handled, ignore this. If it\'s not, just reply and I\'ll send a 60-second video of what two other remodelers set up.';
 }
 
 /**

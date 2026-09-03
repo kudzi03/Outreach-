@@ -15,6 +15,7 @@ const { execFileSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const W1 = JSON.parse(fs.readFileSync(path.join(ROOT, 'workflows/workflow-1-outbound-dispatcher.json'), 'utf8'));
 const W2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'workflows/workflow-2-inbound-listener.json'), 'utf8'));
+const W3 = JSON.parse(fs.readFileSync(path.join(ROOT, 'workflows/workflow-3-lead-qualifier.json'), 'utf8'));
 
 const nodeNames = (wf) => wf.nodes.map((n) => n.name);
 const byName = (wf, name) => wf.nodes.find((n) => n.name === name);
@@ -34,7 +35,7 @@ test('both workflows parse and carry the expected node counts', () => {
 });
 
 test('no Code node still contains an uninjected placeholder', () => {
-  for (const wf of [W1, W2]) {
+  for (const wf of [W1, W2, W3]) {
     for (const node of wf.nodes.filter((n) => n.type === 'n8n-nodes-base.code')) {
       assert.ok(node.parameters.jsCode, `${node.name} has no code`);
       assert.strictEqual(/@@code:/.test(node.parameters.jsCode), false, `${node.name} was not injected`);
@@ -44,7 +45,7 @@ test('no Code node still contains an uninjected placeholder', () => {
 });
 
 test('every Code node body is syntactically valid', () => {
-  for (const wf of [W1, W2]) {
+  for (const wf of [W1, W2, W3]) {
     for (const node of wf.nodes.filter((n) => n.type === 'n8n-nodes-base.code')) {
       assert.doesNotThrow(
         () => new Function(`return (async () => {\n${node.parameters.jsCode}\n});`),
@@ -206,12 +207,13 @@ test('W1: the stagger reads its delay from the queue, not a fixed constant', () 
 });
 
 test('W1: no secret is baked into the JSON', () => {
-  const blob = JSON.stringify(W1) + JSON.stringify(W2);
+  const blob = JSON.stringify(W1) + JSON.stringify(W2) + JSON.stringify(W3);
   // Real Airtable PATs are patXXXXXXXXXXXXXX.<64 hex>; the loose form matches
   // ordinary identifiers like "patchSelectFields".
   assert.strictEqual(/pat[A-Za-z0-9]{14}\.[A-Za-z0-9]{40,}/.test(blob), false, 'an Airtable PAT looks committed');
   assert.strictEqual(/"key[A-Za-z0-9]{14}"/.test(blob), false, 'a legacy Airtable key looks committed');
   assert.strictEqual(/\bSK[a-f0-9]{32}\b/.test(blob), false, 'a Twilio key looks committed');
+  assert.strictEqual(/sk-ant-[A-Za-z0-9_-]{20,}/.test(blob), false, 'an Anthropic key looks committed');
   assert.ok(JSON.stringify(W1).includes('REPLACE_WITH_'), 'credential ids should be placeholders');
   assert.strictEqual(/hooks\.slack\.com\/services\/T[A-Z0-9]/.test(blob), false, 'a Slack webhook looks committed');
 });
@@ -257,4 +259,97 @@ test('W2: the status update is authenticated and tolerant of failure', () => {
 
 test('W2: the IMAP trigger marks mail read so a reply is handled once', () => {
   assert.strictEqual(byName(W2, 'IMAP: New Mail').parameters.postProcessAction, 'read');
+});
+
+/* ============================ Workflow 3 ============================ */
+
+test('W3: the qualifier is a separate, optional workflow', () => {
+  assert.match(W3.name, /optional/i);
+  assert.ok(W3.nodes.length > 20);
+  assert.strictEqual(W3.settings.executionOrder, 'v1');
+});
+
+test('W3: SAFETY — the model is never given a path to email copy', () => {
+  // The single most important property of this workflow. The only thing it is
+  // allowed to write is the Fit verdict.
+  const patchNode = byName(W3, 'Save Fit to Airtable');
+  assert.strictEqual(patchNode.parameters.method, 'PATCH');
+
+  const commit = byName(W3, 'Build Fit Commit').parameters.jsCode;
+  const written = [...commit.matchAll(/'(Fit(?:\s+[A-Za-z]+)*)':/g)].map((m) => m[1]);
+  assert.deepStrictEqual(new Set(written), new Set(['Fit', 'Fit Reason', 'Fit Checked At']),
+    `the qualifier writes ${written.join(', ')} — it must touch nothing else`);
+
+  // And no node in W3 may reach the email templates at all.
+  for (const node of W3.nodes.filter((n) => n.type === 'n8n-nodes-base.code')) {
+    assert.strictEqual(/buildMessage|bodyEmail1|bodyFollowUp/.test(node.parameters.jsCode), false,
+      `${node.name} can reach the email templates`);
+  }
+  assert.strictEqual(W3.nodes.some((n) => /postmark|sendgrid|smtp/i.test(JSON.stringify(n))), false,
+    'the qualifier must have no send path');
+});
+
+test('W3: the Claude call is authenticated and tolerant of failure', () => {
+  const ask = byName(W3, 'Ask Claude');
+  assert.strictEqual(ask.parameters.method, 'POST');
+  assert.match(ask.credentials.httpHeaderAuth.name, /Anthropic/);
+  assert.strictEqual(ask.onError, 'continueRegularOutput', 'an API outage must not abort the run');
+  const headers = ask.parameters.headerParameters.parameters.map((h) => h.name);
+  assert.ok(headers.includes('anthropic-version'));
+});
+
+test('W3: the website fetch cannot crash the run', () => {
+  const fetchNode = byName(W3, 'Fetch Website');
+  assert.strictEqual(fetchNode.onError, 'continueRegularOutput');
+  assert.strictEqual(fetchNode.parameters.options.response.response.neverError, true);
+  assert.ok(fetchNode.parameters.options.timeout, 'a scrape needs a timeout');
+  assert.strictEqual(fetchNode.parameters.options.redirect.redirect.followRedirects, true);
+});
+
+test('W3: every branch reaches the commit and returns to the loop', () => {
+  // No lead may fall out of the loop unrecorded, or it is re-checked forever.
+  assert.deepStrictEqual(targetsOf(W3, 'Readable?', 0), ['Fetch Website']);
+  assert.deepStrictEqual(targetsOf(W3, 'Readable?', 1), ['Build Fit Commit']);
+  assert.deepStrictEqual(targetsOf(W3, 'Enough to Judge?', 0), ['Ask Claude']);
+  assert.deepStrictEqual(targetsOf(W3, 'Enough to Judge?', 1), ['Build Fit Commit']);
+  assert.deepStrictEqual(targetsOf(W3, 'Parse Verdict'), ['Build Fit Commit']);
+  assert.deepStrictEqual(targetsOf(W3, 'Build Fit Commit'), ['Save Fit to Airtable']);
+  assert.deepStrictEqual(targetsOf(W3, 'Save Fit to Airtable'), ['Loop Over Leads']);
+});
+
+test('W3: the schema branch is a loop, like Workflow 1', () => {
+  assert.deepStrictEqual(targetsOf(W3, 'Loop Schema Changes', 0), ['Fit Columns Ready']);
+  assert.deepStrictEqual(targetsOf(W3, 'Loop Schema Changes', 1), ['Is a Change?']);
+  assert.deepStrictEqual(targetsOf(W3, 'Apply Fit Column Change'), ['Loop Schema Changes']);
+});
+
+test('W3: no code node reads a splitInBatches node with a default branch index', () => {
+  for (const node of W3.nodes.filter((n) => n.type === 'n8n-nodes-base.code')) {
+    for (const loop of ['Loop Over Leads', 'Loop Schema Changes']) {
+      assert.strictEqual(
+        node.parameters.jsCode.includes(`$('${loop}').first()`), false,
+        `${node.name} reads ${loop} branch 0, which is "done" and empty mid-loop`
+      );
+    }
+  }
+});
+
+/* ==================== cross-workflow: fail open ==================== */
+
+test('W1 only references the Fit column when it exists', () => {
+  // Workflow 3 is optional; an Airtable formula naming a missing field is
+  // rejected outright, which would take the whole campaign down.
+  const plan = byName(W1, 'Plan Lead Fetch').parameters.jsCode;
+  assert.ok(plan.includes('excludeUnfit: schema.hasFitField === true'));
+  const report = byName(W1, 'Schema Report').parameters.jsCode;
+  assert.ok(report.includes('hasFitField'));
+});
+
+test('W1 skips only an explicit Fit = No', () => {
+  const queueCode = byName(W1, 'Build Send Queue').parameters.jsCode;
+  assert.ok(queueCode.includes("qTrim(lead.fit).toLowerCase() === 'no'"),
+    'the eligibility check must compare against "no" exactly');
+  // A blank or "Unsure" verdict must not appear as a skip condition anywhere.
+  assert.strictEqual(/lead\.fit[^\n]*(unsure|unchecked)/i.test(queueCode), false,
+    'Unsure and unchecked leads must still be contacted');
 });

@@ -62,6 +62,7 @@ if (failed.length || applied.length < expected.length) {
 
 var report = {
   schemaReady: true,
+  hasFitField: summary ? summary.hasFitField === true : false,
   tableId: summary ? summary.tableId : null,
   tableName: summary ? summary.tableName : null,
   fieldsCreated: summary ? (summary.created || []) : [],

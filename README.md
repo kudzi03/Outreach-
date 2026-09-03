@@ -12,8 +12,13 @@ minutes apart, and a reply or opt-out that stops everything instantly and
 permanently.
 
 ```
-                                       ┌──────────────────────────────┐
-  WORKFLOW 1  (daily, Mon–Fri 08:00)   │  Airtable                    │
+  WORKFLOW 3  (hourly, OPTIONAL)       ┌──────────────────────────────┐
+  ───────────────────────────────────  │  Airtable                    │
+  read each lead's website             │                              │
+    → judge fit → Fit = Yes/Unsure/No ▶│                              │
+    (never writes a word of the email) │                              │
+                                       │                              │
+  WORKFLOW 1  (daily, Mon–Fri 08:00)   │                              │
   ───────────────────────────────────  │  ┌────────────────────────┐  │
   schema check → auto-create columns ─▶│  │ First Name  (yours)    │  │
   fetch eligible leads               ◀─│  │ Company Name(yours)    │  │
@@ -25,7 +30,8 @@ permanently.
     verify (MillionVerifier)           │  │ Verification Status    │  │
     switch on Status → touch 1/2/3     │  │ Message ID             │  │
     send  ────────────────────────────▶│  │ Idempotency Key        │  │
-    commit Status + timestamp  ───────▶│  └────────────────────────┘  │
+    commit Status + timestamp  ───────▶│  │ Fit  (from workflow 3) │  │
+                                       │  └────────────────────────┘  │
                                        │                              │
   WORKFLOW 2  (IMAP / webhook)         │                              │
   ───────────────────────────────────  │                              │
@@ -43,15 +49,16 @@ permanently.
 
 | Path | What it is |
 |---|---|
-| `workflows/*.json` | **Import these into n8n.** Generated, complete, ready to run. |
+| `workflows/*.json` | **Import these into n8n.** Generated, complete, ready to run. Workflow 3 is optional. |
 | `workflows/templates/*.json` | The node graph, with `@@code:name@@` markers where source is injected. |
 | `src/lib/*.js` | The real logic: dates, templates, schema diffing, classification, queueing. Unit-tested. |
 | `src/nodes/*.js` | One file per n8n Code node. Thin wrappers over `src/lib`. |
 | `build/build.js` | Inlines the libs into every Code node and validates the graph. |
-| `test/*.test.js` | 164 tests, including a multi-week end-to-end campaign simulation. |
+| `test/*.test.js` | 200 tests, including a multi-week end-to-end campaign simulation. |
 | `tools/` | `preview-emails.js` and `simulate-campaign.js` — see your copy and your schedule before going live. |
 | `docs/AIRTABLE_SETUP.md` | Token scopes, base setup, what the schema engine will and won't do. |
 | `docs/RUNBOOK.md` | Day-2 operations: deliverability, failure modes, SMTP variant, troubleshooting. |
+| `docs/QUALIFICATION.md` | Workflow 3: what it decides, why it doesn't write copy, and what it costs. |
 
 ### Why there is a build step
 
@@ -63,7 +70,7 @@ mechanically inlined:
 
 ```bash
 npm run build     # regenerate workflows/*.json from src/
-npm test          # 164 tests, incl. a check that the JSON matches src/
+npm test          # 200 tests, incl. a check that the JSON matches src/
 npm run verify    # both
 ```
 
@@ -128,21 +135,30 @@ Fallback when there is no usable first name:
 > for a bigger remodel, who handles following up?
 
 **Touch 2 — Day 4** (3 business days later, threaded `Re:`)
-> Hey [First Name], reason I asked is most kitchen & bath guys I talk to say
-> their biggest headache is estimating a project on Tuesday, getting pulled onto
-> a job site on Wednesday, and completely forgetting to check back in by Friday.
-> By the time they call, the homeowner already signed with someone else who
-> checked in first.
+> Hey [First Name] — reason I ask: most guys tell me the quote goes out Tuesday,
+> they get pulled onto a job site Wednesday, and nobody's called the homeowner by
+> Friday.
 >
-> Do you guys have something running that texts/emails them automatically after
-> 48 hours, or is it mostly manual right now?
+> Is that you, or have you got it handled?
 
 **Touch 3 — Day 8** (4 business days later, threaded `Re:`)
-> Hey [First Name], I'm guessing either your pipeline is completely packed for
-> the next 6 months, or you've already got a system handling quote follow-ups?
+> Hey [First Name] — last one from me.
 >
-> If not, let me know—happy to send over a 60-second video showing how two other
-> remodelers automated it. Otherwise, I'll stop bugging you!
+> If it's handled, ignore this. If it's not, just reply and I'll send a 60-second
+> video of what two other remodelers set up.
+
+The follow-ups are deliberately **shorter than the opener**. The prospect can see
+touch 1 directly beneath them, so re-explaining the premise wastes the three
+seconds a bump gets. Each one ends on a binary a busy person can answer in four
+words — including an easy "no", which is what makes people reply at all.
+
+With no usable first name the follow-ups drop the greeting entirely and open on
+the sentence. "Hey there," on a reply is the giveaway that it's a mail merge.
+
+`test/templates.test.js` fails the build if a rewrite reintroduces any of ~20
+template tells — "circling back", "I came across", "I'm guessing your pipeline
+is packed", "I'll stop bugging you", "leverage", "seamless" — or if a follow-up
+grows longer than the opener.
 
 Every message is plain text with **no links, no HTML and no open tracking**, and
 carries the sender's name, company and postal address plus a plain-English
@@ -253,8 +269,8 @@ can never strand the other 29.
 
 ```
 $ npm test
-# tests 164
-# pass 164
+# tests 200
+# pass 200
 ```
 
 The suite covers the things that would be expensive to get wrong:

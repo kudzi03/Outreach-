@@ -49,11 +49,19 @@ for (var p = 0; p < plan.patchSelectFields.length; p++) {
   });
 }
 
+// Does the `Fit` column exist (or is it about to)? Workflow 1's fetch formula
+// may only reference it if so — Airtable rejects a formula naming a field that
+// is not there, and Workflow 3 is entirely optional.
+var liveTable = findTable(meta, cfg.tableName);
+var hasFitField = !!fieldByName(liveTable, 'Fit') ||
+  plan.createFields.some(function (f) { return f.name === 'Fit'; });
+
 // Always emit the plan itself last so the summary node can find it even when
 // there is nothing to change.
 items.push({
   json: {
     op: 'plan-summary',
+    hasFitField: hasFitField,
     tableId: plan.tableId,
     tableName: plan.tableName,
     changesRequired: items.length,

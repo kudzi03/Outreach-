@@ -1,0 +1,993 @@
+{
+  "name": "K&B Outreach — 3. Lead Qualifier (optional)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "Every Hour",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        0
+      ],
+      "notes": "Chews through unqualified leads in the background. Safe to run any hour.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "Manual Test Run",
+      "name": "Manual Test Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-01-config.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ============================================================================\n//                      >>>  FILL THIS IN. NOTHING ELSE.  <<<\n// ============================================================================\n// Workflow 3 reads each lead's website and decides whether they belong on the\n// list at all. It NEVER writes any part of an email — the copy stays fixed and\n// tested. See docs/QUALIFICATION.md for why.\n//\n// The first two must match Workflow 1 exactly.\n// ============================================================================\n\nvar SETTINGS = {\n\n  // --- Required — must match Workflow 1 ------------------------------------\n  AIRTABLE_BASE_ID: '',\n  AIRTABLE_TABLE_NAME: 'Leads',\n\n  // --- Required: your Anthropic API key ------------------------------------\n  // Get one at https://console.anthropic.com. The key itself lives in the n8n\n  // credential \"Anthropic API Key (Header Auth)\" (Name: x-api-key), NOT here.\n  // This just picks the model.\n  CLAUDE_MODEL: '',             // default 'claude-sonnet-5'\n\n  // --- Cost / pace ---------------------------------------------------------\n  // Leads checked per run. At the default hourly schedule, 50/run clears\n  // 1,200 leads a day for roughly $4 per 1,000.\n  QUALIFY_PER_RUN: '',          // default 50\n  CLAUDE_EFFORT: '',            // default 'low' — this is a short classification\n\n  // --- Optional ------------------------------------------------------------\n  SLACK_WEBHOOK_URL: '',        // blank = no summary posted\n  // true = check every lead again, even ones already judged. Costs money.\n  FORCE_REQUALIFY: ''           // default false\n\n};\n\n// ============================================================================\n//              Nothing below this line needs editing. Ever.\n// ============================================================================\n\n// ----- node body: src/nodes/w3-01-config.js -----\n\n// n8n Code node — \"W3 Config\" (Run Once for All Items)\n//\n\n\nfunction env(name) {\n  try {\n    var v = $env[name];\n    if (v === undefined || v === null || String(v).trim() === '') return null;\n    return String(v).trim();\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction setting(name, fallback) {\n  var v = SETTINGS[name];\n  if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();\n  var e = env(name);\n  return e === null ? fallback : e;\n}\n\nfunction settingNum(name, fallback) {\n  var raw = setting(name, null);\n  if (raw === null) return fallback;\n  var n = Number(raw);\n  return isFinite(n) ? n : fallback;\n}\n\nfunction settingBool(name, fallback) {\n  var raw = setting(name, null);\n  return raw === null ? fallback : /^(1|true|yes|on)$/i.test(raw);\n}\n\nvar cfg = {\n  runId: 'qual_' + new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14),\n  now: new Date().toISOString(),\n\n  airtableApiBase: 'https://api.airtable.com/v0',\n  airtableMetaBase: 'https://api.airtable.com/v0/meta',\n  baseId: setting('AIRTABLE_BASE_ID', ''),\n  tableName: setting('AIRTABLE_TABLE_NAME', 'Leads'),\n\n  claudeEndpoint: 'https://api.anthropic.com/v1/messages',\n  claudeVersion: '2023-06-01',\n  claudeModel: setting('CLAUDE_MODEL', 'claude-sonnet-5'),\n  claudeEffort: setting('CLAUDE_EFFORT', 'low'),\n  claudeMaxTokens: settingNum('CLAUDE_MAX_TOKENS', 2000),\n\n  perRunCap: settingNum('QUALIFY_PER_RUN', 50),\n  pageCharLimit: settingNum('PAGE_CHAR_LIMIT', 6000),\n  fetchTimeoutMs: settingNum('PAGE_FETCH_TIMEOUT_MS', 15000),\n  forceRequalify: settingBool('FORCE_REQUALIFY', false),\n\n  slackWebhookUrl: setting('SLACK_WEBHOOK_URL', ''),\n\n  // Published rates for claude-sonnet-5, used only for the cost estimate in\n  // the run summary. Update if you switch model.\n  pricing: { inputPerMillion: 2.0, outputPerMillion: 10.0 }\n};\n\nvar missing = [];\nif (!cfg.baseId) missing.push('AIRTABLE_BASE_ID');\nif (!cfg.tableName) missing.push('AIRTABLE_TABLE_NAME');\nif (cfg.perRunCap < 1 || cfg.perRunCap > 500) missing.push('QUALIFY_PER_RUN must be between 1 and 500');\nif (missing.length) {\n  throw new Error(\n    'Setup is incomplete. Open this node (\"W3 Config\"), scroll to the SETTINGS ' +\n    'block at the top, and fill in:\\n  - ' + missing.join('\\n  - ') +\n    '\\nNo lead was qualified.'\n  );\n}\n\nconsole.log('[' + cfg.runId + '] qualifying up to ' + cfg.perRunCap +\n  ' leads with ' + cfg.claudeModel + ' (effort ' + cfg.claudeEffort + ')');\n\nreturn [{ json: { cfg: cfg } }];\n"
+      },
+      "id": "W3 Config",
+      "name": "W3 Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        100
+      ],
+      "notes": "The only node you edit. Must match Workflow 1 on base and table.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.cfg.airtableMetaBase }}/bases/{{ $json.cfg.baseId }}/tables",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Get Base Schema",
+      "name": "Get Base Schema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "PAT needs schema.bases:read.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-02-schema-plan.js + src/lib/{schema}.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- inlined: src/lib/schema.js -----\n/**\n * schema.js — Airtable Metadata API schema check.\n *\n * Contract, in priority order:\n *   1. NEVER touch a user column. `First Name`, `Company Name`, `Email` and\n *      `City` are protected: we do not rename, retype or delete them, and we\n *      never issue a destructive request of any kind. The Metadata API we use\n *      can only CREATE fields and ADD single-select choices.\n *   2. If a system field already exists under a DIFFERENT but workable type\n *      (e.g. `Status` as a plain text column), adopt it as-is and report a\n *      note. Airtable cannot convert a field's type over the API, and\n *      dropping/recreating would destroy data — so we adapt to the base\n *      rather than forcing the base to adapt to us.\n *   3. Only genuinely absent fields are created.\n */\n\nvar SCHEMA_STATUS_CHOICES = [\n  'New',\n  'Invalid',\n  'Queued',\n  'Sent Email 1',\n  'Sent Follow-up 1',\n  'Sent Follow-up 2',\n  'Replied',\n  'Do Not Contact'\n];\n\nvar SCHEMA_FIT_CHOICES = ['Yes', 'Unsure', 'No', 'Unchecked'];\n\n// Columns owned by the user. Present here purely so we can assert we never\n// emit a mutation for them, and so we can warn loudly if one is missing.\nvar SCHEMA_PROTECTED_FIELDS = ['First Name', 'Company Name', 'Email', 'City'];\n\n/**\n * The fields this system needs.\n *\n * `required` fields are named in the brief. The rest are the bookkeeping the\n * brief's own requirements imply — RFC-5322 threading needs a stored\n * Message-ID, and \"ultra-reliable\" needs an idempotency key and an error\n * column. Set `MANAGE_OPTIONAL_FIELDS=false` to create only the required set.\n */\nfunction desiredFields(opts) {\n  var o = opts || {};\n  var tz = o.timeZone || 'utc';\n  var dateOpts = {\n    dateFormat: { name: 'iso' },\n    timeFormat: { name: '24hour' },\n    timeZone: 'utc' // store UTC; all display/logic conversion happens in code\n  };\n\n  var required = [\n    {\n      name: 'Status',\n      type: 'singleSelect',\n      description: 'Outreach state machine. Managed by n8n.',\n      options: { choices: SCHEMA_STATUS_CHOICES.map(function (c) { return { name: c }; }) },\n      // Adopting a text column is fine: the sequencer compares strings.\n      acceptableExistingTypes: ['singleSelect', 'singleLineText', 'multilineText']\n    },\n    {\n      name: 'Last Contacted Date',\n      type: 'dateTime',\n      description: 'UTC timestamp of the last outbound touch. Managed by n8n.',\n      options: dateOpts,\n      acceptableExistingTypes: ['dateTime', 'date', 'singleLineText']\n    },\n    {\n      name: 'Verification Status',\n      type: 'singleLineText',\n      description: 'MillionVerifier verdict: Valid | Risky | Invalid. Managed by n8n.',\n      acceptableExistingTypes: ['singleLineText', 'singleSelect', 'multilineText']\n    }\n  ];\n\n  var optional = [\n    {\n      name: 'Message ID',\n      type: 'singleLineText',\n      description: 'RFC 5322 Message-ID of touch 1, so follow-ups thread.',\n      acceptableExistingTypes: ['singleLineText', 'multilineText']\n    },\n    {\n      name: 'Thread Subject',\n      type: 'singleLineText',\n      description: 'Subject of touch 1, reused as \"Re: ...\" on follow-ups.',\n      acceptableExistingTypes: ['singleLineText', 'multilineText']\n    },\n    {\n      name: 'Idempotency Key',\n      type: 'singleLineText',\n      description: 'recordId:touch of the last committed send. Blocks duplicates on retry.',\n      acceptableExistingTypes: ['singleLineText', 'multilineText']\n    },\n    {\n      name: 'Last Error',\n      type: 'multilineText',\n      description: 'Most recent send/verification failure. Cleared on success.',\n      acceptableExistingTypes: ['multilineText', 'singleLineText']\n    },\n    {\n      name: 'Reply Received At',\n      type: 'dateTime',\n      description: 'UTC timestamp of the inbound reply detected by Workflow 2.',\n      options: dateOpts,\n      acceptableExistingTypes: ['dateTime', 'date', 'singleLineText']\n    }\n  ].concat(fitFields(dateOpts));\n\n  void tz;\n  return o.manageOptional === false\n    ? restrict(required, o.only)\n    : restrict(required.concat(optional), o.only);\n}\n\n/**\n * Columns written by Workflow 3 (the qualification pass). Kept separate so\n * Workflow 3 can provision just these three and run standalone.\n */\nfunction fitFields(dateOpts) {\n  return [\n    {\n      name: 'Fit',\n      type: 'singleSelect',\n      description: 'Workflow 3 verdict: Yes | Unsure | No | Unchecked. Only \"No\" is skipped.',\n      options: { choices: SCHEMA_FIT_CHOICES.map(function (c) { return { name: c }; }) },\n      acceptableExistingTypes: ['singleSelect', 'singleLineText', 'multilineText']\n    },\n    {\n      name: 'Fit Reason',\n      type: 'multilineText',\n      description: 'One-line justification from the qualification pass, with evidence.',\n      acceptableExistingTypes: ['multilineText', 'singleLineText']\n    },\n    {\n      name: 'Fit Checked At',\n      type: 'dateTime',\n      description: 'UTC timestamp of the last qualification check.',\n      options: dateOpts || { dateFormat: { name: 'iso' }, timeFormat: { name: '24hour' }, timeZone: 'utc' },\n      acceptableExistingTypes: ['dateTime', 'date', 'singleLineText']\n    }\n  ];\n}\n\n/** Narrow a field list to a named subset, preserving order. */\nfunction restrict(fields, only) {\n  if (!only || !only.length) return fields;\n  var wanted = only.map(function (n) { return String(n).toLowerCase(); });\n  return fields.filter(function (f) { return wanted.indexOf(f.name.toLowerCase()) !== -1; });\n}\n\n\n\n/** Find a table by id or (case-insensitive) name in a Metadata API payload. */\nfunction findTable(metaResponse, tableIdOrName) {\n  var tables = (metaResponse && metaResponse.tables) || [];\n  var needle = String(tableIdOrName || '').trim().toLowerCase();\n  for (var i = 0; i < tables.length; i++) {\n    var t = tables[i];\n    if (t.id === tableIdOrName) return t;\n    if (String(t.name || '').toLowerCase() === needle) return t;\n  }\n  return null;\n}\n\nfunction fieldByName(table, name) {\n  var fields = (table && table.fields) || [];\n  var needle = String(name).toLowerCase();\n  for (var i = 0; i < fields.length; i++) {\n    if (String(fields[i].name || '').toLowerCase() === needle) return fields[i];\n  }\n  return null;\n}\n\n/** Choice names already present on an existing singleSelect field. */\nfunction existingChoiceNames(field) {\n  var choices = (field && field.options && field.options.choices) || [];\n  return choices.map(function (c) { return String(c.name); });\n}\n\n/**\n * Compare the live table against `desiredFields()` and produce an\n * executable plan. Pure function: does no I/O, so it is fully unit-testable.\n *\n * @returns {{\n *   tableId: string|null,\n *   createFields: Array,          POST bodies for /meta/.../fields\n *   patchSelectFields: Array,     PATCH bodies that only ADD select choices\n *   adopted: Array,               fields kept under a different-but-usable type\n *   notes: string[],\n *   blocking: string[],           problems a human must resolve\n *   ok: boolean\n * }}\n */\nfunction planSchema(metaResponse, tableIdOrName, opts) {\n  var plan = {\n    tableId: null,\n    tableName: null,\n    createFields: [],\n    patchSelectFields: [],\n    adopted: [],\n    notes: [],\n    blocking: [],\n    ok: false\n  };\n\n  var table = findTable(metaResponse, tableIdOrName);\n  if (!table) {\n    plan.blocking.push(\n      'Table \"' + tableIdOrName + '\" not found in base. Check AIRTABLE_TABLE_NAME ' +\n      'and that the PAT has schema.bases:read on this base.'\n    );\n    return plan;\n  }\n  plan.tableId = table.id;\n  plan.tableName = table.name;\n\n  // Protected user columns: warn, never mutate.\n  for (var p = 0; p < SCHEMA_PROTECTED_FIELDS.length; p++) {\n    var prot = SCHEMA_PROTECTED_FIELDS[p];\n    if (!fieldByName(table, prot)) {\n      if (prot === 'Email') {\n        plan.blocking.push('Required user column \"Email\" is missing — nothing can be sent without it.');\n      } else {\n        plan.notes.push('User column \"' + prot + '\" is missing. Copy will fall back to its generic variant.');\n      }\n    }\n  }\n\n  var wanted = desiredFields(opts);\n  for (var i = 0; i < wanted.length; i++) {\n    var spec = wanted[i];\n    var existing = fieldByName(table, spec.name);\n\n    if (!existing) {\n      var body = { name: spec.name, type: spec.type };\n      if (spec.description) body.description = spec.description;\n      if (spec.options) body.options = spec.options;\n      plan.createFields.push(body);\n      continue;\n    }\n\n    if (existing.type === spec.type) {\n      // Same type. For singleSelect, top up any missing choices additively.\n      if (spec.type === 'singleSelect') {\n        var have = existingChoiceNames(existing);\n        var haveLower = have.map(function (n) { return n.toLowerCase(); });\n        var wantChoices = spec.name === 'Fit' ? SCHEMA_FIT_CHOICES : SCHEMA_STATUS_CHOICES;\n        var missing = wantChoices.filter(function (c) {\n          return haveLower.indexOf(c.toLowerCase()) === -1;\n        });\n        if (missing.length) {\n          // PATCH must echo ALL existing choices (with their ids) plus the new\n          // ones, or Airtable rejects the request as a destructive change.\n          var choices = ((existing.options && existing.options.choices) || []).map(function (c) {\n            return c.id ? { id: c.id, name: c.name } : { name: c.name };\n          }).concat(missing.map(function (n) { return { name: n }; }));\n          plan.patchSelectFields.push({\n            fieldId: existing.id,\n            name: existing.name,\n            addedChoices: missing,\n            body: { options: { choices: choices } }\n          });\n        }\n      }\n      continue;\n    }\n\n    var acceptable = spec.acceptableExistingTypes || [];\n    if (acceptable.indexOf(existing.type) !== -1) {\n      plan.adopted.push({ name: spec.name, wanted: spec.type, found: existing.type });\n      plan.notes.push(\n        'Field \"' + spec.name + '\" already exists as \"' + existing.type + '\" (wanted \"' +\n        spec.type + '\"). Adopting it as-is — no data touched.'\n      );\n      continue;\n    }\n\n    plan.blocking.push(\n      'Field \"' + spec.name + '\" exists as \"' + existing.type + '\", which this system ' +\n      'cannot use (needs one of: ' + acceptable.join(', ') + '). Rename or convert it ' +\n      'in the Airtable UI — this workflow will not modify it.'\n    );\n  }\n\n  plan.ok = plan.blocking.length === 0;\n  return plan;\n}\n\n/**\n * Airtable single-select fields reject unknown option names. When Status is a\n * select whose choices we could not extend, degrade to the closest legal value\n * instead of failing the write.\n */\nfunction coerceStatusValue(value, allowedChoices) {\n  if (!allowedChoices || !allowedChoices.length) return value;\n  var lower = String(value).toLowerCase();\n  for (var i = 0; i < allowedChoices.length; i++) {\n    if (String(allowedChoices[i]).toLowerCase() === lower) return allowedChoices[i];\n  }\n  return null; // caller decides: skip the write rather than corrupt the cell\n}\n\n// ----- node body: src/nodes/w3-02-schema-plan.js -----\n\n// n8n Code node — \"Plan Fit Columns\" (Run Once for All Items)\n//\n// Provisions only the three columns Workflow 3 writes, so this workflow can be\n// run before — or entirely without — Workflow 1. Same contract as Workflow 1's\n// schema engine: create missing fields, extend select choices additively,\n// never touch a user column, never retype or delete anything.\n\nvar cfg = $('W3 Config').first().json.cfg;\nvar meta = $input.first().json;\n\nvar plan = planSchema(meta, cfg.tableName, {\n  only: ['Fit', 'Fit Reason', 'Fit Checked At']\n});\n\nif (!plan.ok) {\n  throw new Error(\n    'Cannot prepare the qualification columns:\\n  - ' + plan.blocking.join('\\n  - ') +\n    '\\nNothing was changed.'\n  );\n}\n\nvar items = [];\nfor (var i = 0; i < plan.createFields.length; i++) {\n  items.push({\n    json: {\n      op: 'create-field',\n      label: 'CREATE ' + plan.createFields[i].name,\n      method: 'POST',\n      url: cfg.airtableMetaBase + '/bases/' + cfg.baseId + '/tables/' + plan.tableId + '/fields',\n      body: plan.createFields[i]\n    }\n  });\n}\nfor (var p = 0; p < plan.patchSelectFields.length; p++) {\n  var patch = plan.patchSelectFields[p];\n  items.push({\n    json: {\n      op: 'patch-choices',\n      label: 'ADD CHOICES to ' + patch.name + ': ' + patch.addedChoices.join(', '),\n      method: 'PATCH',\n      url: cfg.airtableMetaBase + '/bases/' + cfg.baseId + '/tables/' + plan.tableId + '/fields/' + patch.fieldId,\n      body: patch.body\n    }\n  });\n}\n\nitems.push({\n  json: {\n    op: 'plan-summary',\n    tableId: plan.tableId,\n    tableName: plan.tableName,\n    created: plan.createFields.map(function (f) { return f.name; }),\n    choicesAdded: plan.patchSelectFields.map(function (f) { return f.name; }),\n    adopted: plan.adopted,\n    notes: plan.notes\n  }\n});\n\nreturn items;\n"
+      },
+      "id": "Plan Fit Columns",
+      "name": "Plan Fit Columns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        100
+      ],
+      "notes": "Creates Fit / Fit Reason / Fit Checked At if missing. Touches nothing else.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Schema Changes",
+      "name": "Loop Schema Changes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        420,
+        100
+      ],
+      "notes": "Output 0 = done (fires once), output 1 = one pending change.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.op }}",
+              "rightValue": "plan-summary",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Is a Change?",
+      "name": "Is a Change?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        240
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Apply Fit Column Change",
+      "name": "Apply Fit Column Change",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "notes": "PAT needs schema.bases:write.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-03-schema-report.js + src/lib/{qualify}.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- inlined: src/lib/qualify.js -----\n/**\n * qualify.js — the lead qualification pass (Workflow 3).\n *\n * What this does and, more importantly, what it does NOT do.\n *\n * It reads a company's website and decides whether they belong on the list at\n * all. It does not write, suggest, or influence a single word of the email.\n * That separation is deliberate:\n *\n *  - Generated openers (\"I came across your portfolio of transitional kitchen\n *    remodels...\") are the most recognizable pattern in cold email. They read\n *    as more of a pitch, not less.\n *  - Anything a model writes into a live email is untestable. The rest of this\n *    system is deterministic and covered by tests; a hallucinated detail in a\n *    cold email is not recoverable.\n *  - Targeting is where the leverage actually is at 30 sends/day. Not sending\n *    to a roofer beats any amount of clever phrasing.\n *\n * So the model answers narrow factual questions, the answer lands in a column,\n * and Workflow 1 skips the clear mismatches. Fixed copy, better list.\n *\n * FAIL-OPEN, everywhere. A dead site, a timeout, an API outage, a blocked\n * scraper — all resolve to \"Unsure\", which is still contacted. Only an\n * explicit \"No\" is skipped. Never running Workflow 3 at all leaves Workflow 1\n * behaving exactly as it did before.\n */\n\n// This module deliberately depends on NOTHING else. Reaching for templates.js\n// (which has an identical whitespace helper) would inline the entire email copy\n// into Workflow 3's nodes, and the one property this workflow must have is that\n// the model cannot reach a single word that goes to a prospect.\n\n/** Mailbox providers whose domain tells us nothing about the business. */\nvar QL_FREEMAIL = [\n  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'hotmail.com',\n  'outlook.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com',\n  'mac.com', 'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',\n  'bellsouth.net', 'cox.net', 'charter.net', 'earthlink.net', 'protonmail.com',\n  'proton.me', 'gmx.com', 'mail.com', 'yandex.com', 'zoho.com'\n];\n\nvar QL_VERDICTS = ['Yes', 'Unsure', 'No'];\n\nvar QL_CATEGORIES = [\n  'kitchen_bath_remodeler', 'general_contractor', 'handyman',\n  'supplier_showroom', 'designer_only', 'other_trade', 'not_a_business',\n  'unknown'\n];\n\nvar QL_SIZES = ['solo', 'small_team', 'established', 'unknown'];\n\nfunction qlTrim(v) {\n  return v === null || v === undefined ? '' : String(v).trim();\n}\n\n/** Collapse whitespace and strip control characters. Local by design. */\nfunction qlTidy(value) {\n  if (value === null || value === undefined) return '';\n  return String(value)\n    .replace(/[\\u0000-\\u001F\\u007F]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n/** Domain half of an email address, lowercased. */\nfunction domainOf(email) {\n  var at = qlTrim(email).toLowerCase().split('@');\n  return at.length === 2 && at[1] ? at[1] : null;\n}\n\nfunction isFreemail(email) {\n  var d = domainOf(email);\n  return d ? QL_FREEMAIL.indexOf(d) !== -1 : false;\n}\n\n/**\n * Where to look for this company's site.\n *\n * A `Website` column wins if the user has one. Otherwise the email domain is a\n * good guess for a small contractor — dana@mapleridgekitchens.com is almost\n * certainly mapleridgekitchens.com. A free mailbox tells us nothing, so those\n * leads are left unchecked rather than guessed at.\n */\nfunction resolveUrl(lead) {\n  var explicit = qlTrim(lead && (lead.website || lead['Website'] || lead['Site'] || lead['URL']));\n  if (explicit) {\n    var url = explicit;\n    if (!/^https?:\\/\\//i.test(url)) url = 'https://' + url.replace(/^\\/+/, '');\n    if (/^https?:\\/\\/[^\\s/.]+\\.[^\\s/]{2,}/i.test(url)) {\n      return { url: url.split('#')[0], source: 'website-column' };\n    }\n    return { url: null, source: 'website-column', reason: 'Website column is not a usable URL.' };\n  }\n\n  var email = qlTrim(lead && (lead.email || lead['Email']));\n  if (!email) return { url: null, source: 'none', reason: 'No website and no email address.' };\n  if (isFreemail(email)) {\n    return { url: null, source: 'freemail', reason: 'Free mailbox (' + domainOf(email) + ') — no company site to read.' };\n  }\n  var d = domainOf(email);\n  if (!d || d.indexOf('.') === -1) {\n    return { url: null, source: 'email-domain', reason: 'Email domain is unusable.' };\n  }\n  return { url: 'https://' + d, source: 'email-domain' };\n}\n\n/**\n * HTML -> readable text.\n *\n * Scripts, styles, nav chrome and SVG are dropped first: they are most of the\n * bytes and none of the signal, and every token we send costs money.\n */\nfunction htmlToText(html, maxChars) {\n  var limit = maxChars || 6000;\n  var text = String(html || '');\n\n  var title = '';\n  var titleMatch = /<title[^>]*>([\\s\\S]{0,300}?)<\\/title>/i.exec(text);\n  if (titleMatch) title = titleMatch[1];\n\n  var description = '';\n  var descMatch = /<meta[^>]+name=[\"']description[\"'][^>]*content=[\"']([\\s\\S]{0,400}?)[\"']/i.exec(text);\n  if (descMatch) description = descMatch[1];\n\n  var body = text\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<!--[\\s\\S]*?-->/g, ' ')\n    .replace(/<\\/(p|div|li|h[1-6]|tr|section|article)>/gi, '\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&quot;/gi, '\"')\n    .replace(/[ \\t ]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n\n  var head = [];\n  if (title) head.push('PAGE TITLE: ' + qlTidy(title));\n  if (description) head.push('META DESCRIPTION: ' + qlTidy(description));\n  var joined = (head.length ? head.join('\\n') + '\\n\\n' : '') + body;\n\n  return {\n    title: qlTidy(title),\n    description: qlTidy(description),\n    text: joined.slice(0, limit),\n    truncated: joined.length > limit,\n    originalLength: joined.length\n  };\n}\n\n/**\n * Is there enough on the page to judge anything?\n * A parked domain, a JS-only shell or a 404 gives us nothing, and asking the\n * model to guess from 40 words produces confident nonsense.\n */\nfunction isUsablePage(page, minChars) {\n  var min = minChars || 200;\n  if (!page || !page.text) return false;\n  var words = page.text.replace(/\\s+/g, ' ').trim();\n  if (words.length < min) return false;\n  if (/domain (is )?(for sale|parked)|buy this domain|coming soon|under construction|website is being/i.test(words.slice(0, 600))) {\n    return false;\n  }\n  return true;\n}\n\nvar QL_SYSTEM_PROMPT = [\n  'You qualify leads for a B2B outreach list. You are shown text scraped from',\n  'one company website and you decide whether that company belongs on the list.',\n  '',\n  'The list targets KITCHEN AND BATH REMODELING CONTRACTORS in the US who:',\n  '  - sell and install full kitchen and/or bathroom remodels for homeowners, and',\n  '  - are large enough to run a quoting/estimating process (not a lone handyman).',\n  '',\n  'Answer \"No\" when the company is any of:',\n  '  - a supplier, showroom or fabricator that does not install',\n  '  - a handyman or odd-jobs service',\n  '  - an interior designer or architect who does not do the build',\n  '  - an unrelated trade (roofing, HVAC, landscaping, plumbing-only, electrical,',\n  '    flooring-only, painting, pools, restoration, cleaning)',\n  '  - a franchise portal, directory, marketplace or lead-gen site',\n  '  - a parked, dead or non-business page',\n  '',\n  'Answer \"Unsure\" when the page is too thin or too ambiguous to tell.',\n  '',\n  'Be strict. A wrong \"Yes\" wastes a send and risks a spam complaint; a wrong',\n  '\"No\" only costs one lead. Judge ONLY from the text shown - never guess from',\n  'the company name, and never invent details that are not on the page.',\n  '',\n  'Reply with a single JSON object and nothing else. No prose, no code fence:',\n  '{',\n  '  \"fit\": \"Yes\" | \"Unsure\" | \"No\",',\n  '  \"category\": \"kitchen_bath_remodeler\" | \"general_contractor\" | \"handyman\" |',\n  '              \"supplier_showroom\" | \"designer_only\" | \"other_trade\" |',\n  '              \"not_a_business\" | \"unknown\",',\n  '  \"size\": \"solo\" | \"small_team\" | \"established\" | \"unknown\",',\n  '  \"does_kitchens\": true | false,',\n  '  \"does_baths\": true | false,',\n  '  \"has_existing_crm\": true | false,',\n  '  \"reason\": \"<= 20 words, quoting evidence from the page\"',\n  '}',\n  '',\n  'has_existing_crm means the page advertises online booking, instant quoting or',\n  'automated follow-up.'\n].join('\\n');\n\n/**\n * Build the Anthropic Messages API request body.\n *\n * Low effort: this is a short classification, not a reasoning problem, and\n * effort is the first thing that should come down on a per-lead cost.\n */\nfunction buildClaudeRequest(page, lead, opts) {\n  var o = opts || {};\n  var company = qlTrim(lead && (lead.companyName || lead['Company Name'])) || '(unknown)';\n  var city = qlTrim(lead && (lead.city || lead['City']));\n\n  var userText = [\n    'Company name on the list: ' + company,\n    city ? 'City on the list: ' + city : null,\n    'Website: ' + (lead.qualifyUrl || '(unknown)'),\n    '',\n    '--- BEGIN PAGE TEXT ---',\n    page.text,\n    '--- END PAGE TEXT ---'\n  ].filter(Boolean).join('\\n');\n\n  return {\n    model: o.model || 'claude-sonnet-5',\n    max_tokens: o.maxTokens || 2000,\n    system: QL_SYSTEM_PROMPT,\n    output_config: { effort: o.effort || 'low' },\n    messages: [{ role: 'user', content: userText }]\n  };\n}\n\n/** Pull the assistant's text out of a Messages API response. */\nfunction textFromResponse(response) {\n  var blocks = (response && response.content) || [];\n  var out = [];\n  for (var i = 0; i < blocks.length; i++) {\n    // Skip thinking blocks; take the visible answer only.\n    if (blocks[i] && blocks[i].type === 'text' && blocks[i].text) out.push(blocks[i].text);\n  }\n  return out.join('\\n').trim();\n}\n\n/** Find the first balanced {...} in a string, tolerating a stray code fence. */\nfunction extractJson(text) {\n  if (!text) return null;\n  var cleaned = String(text).replace(/```(?:json)?/gi, '');\n  var start = cleaned.indexOf('{');\n  if (start === -1) return null;\n  var depth = 0;\n  var inString = false;\n  var escaped = false;\n  for (var i = start; i < cleaned.length; i++) {\n    var ch = cleaned[i];\n    if (escaped) { escaped = false; continue; }\n    if (ch === '\\\\') { escaped = true; continue; }\n    if (ch === '\"') { inString = !inString; continue; }\n    if (inString) continue;\n    if (ch === '{') depth++;\n    else if (ch === '}') {\n      depth--;\n      if (depth === 0) {\n        try {\n          return JSON.parse(cleaned.slice(start, i + 1));\n        } catch (e) {\n          return null;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nfunction oneOf(value, allowed, fallback) {\n  var v = qlTrim(value).toLowerCase();\n  for (var i = 0; i < allowed.length; i++) {\n    if (String(allowed[i]).toLowerCase() === v) return allowed[i];\n  }\n  return fallback;\n}\n\n/**\n * Turn a raw API response (or a failure) into a verdict we are willing to\n * write to Airtable.\n *\n * Every unhappy path lands on \"Unsure\", never \"No\". A model that returns\n * garbage, an API that 500s, a page we could not read — none of those are\n * evidence that the company is a bad fit, and treating them as such would\n * silently delete leads.\n */\nfunction parseVerdict(response, opts) {\n  var o = opts || {};\n\n  if (o.httpError || !response) {\n    return unsure('Qualification API unreachable: ' + String(o.httpError || 'no response').slice(0, 120));\n  }\n  if (response.type === 'error' || response.error) {\n    var msg = (response.error && (response.error.message || response.error.type)) || 'API error';\n    return unsure('Qualification API error: ' + String(msg).slice(0, 120));\n  }\n  if (response.stop_reason === 'refusal') {\n    return unsure('Model declined to classify this page.');\n  }\n\n  var parsed = extractJson(textFromResponse(response));\n  if (!parsed || typeof parsed !== 'object') {\n    return unsure('Model did not return usable JSON.');\n  }\n\n  var fit = oneOf(parsed.fit, QL_VERDICTS, null);\n  if (!fit) return unsure('Model returned an unrecognized verdict.');\n\n  var usage = response.usage || {};\n  return {\n    fit: fit,\n    category: oneOf(parsed.category, QL_CATEGORIES, 'unknown'),\n    size: oneOf(parsed.size, QL_SIZES, 'unknown'),\n    doesKitchens: parsed.does_kitchens === true,\n    doesBaths: parsed.does_baths === true,\n    hasExistingCrm: parsed.has_existing_crm === true,\n    reason: qlTrim(parsed.reason).slice(0, 300) || 'No reason given.',\n    inputTokens: Number(usage.input_tokens) || 0,\n    outputTokens: Number(usage.output_tokens) || 0,\n    ok: true\n  };\n\n  function unsure(reason) {\n    return {\n      fit: 'Unsure',\n      category: 'unknown',\n      size: 'unknown',\n      doesKitchens: false,\n      doesBaths: false,\n      hasExistingCrm: false,\n      reason: reason,\n      inputTokens: 0,\n      outputTokens: 0,\n      ok: false\n    };\n  }\n}\n\n/** Rough USD cost of one classification, for the run summary. */\nfunction estimateCost(inputTokens, outputTokens, pricing) {\n  var p = pricing || { inputPerMillion: 2.0, outputPerMillion: 10.0 }; // claude-sonnet-5\n  return (inputTokens / 1e6) * p.inputPerMillion + (outputTokens / 1e6) * p.outputPerMillion;\n}\n\n/**\n * Airtable formula for leads that still need checking.\n *\n * Only leads that have not been contacted yet: re-qualifying someone already\n * mid-sequence changes nothing, because Workflow 1 will not stop a sequence on\n * a fit verdict — only on a reply or an opt-out.\n */\nfunction qualifyFetchFormula() {\n  return [\n    'AND(',\n    '  {Email} != \"\",',\n    '  OR({Fit} = \"\", {Fit} = \"Unchecked\"),',\n    '  OR({Status} = \"\", {Status} = \"New\", {Status} = \"Queued\")',\n    ')'\n  ].join('').replace(/\\s+/g, ' ');\n}\n\n/** Normalize one Airtable record for the qualification pass. */\nfunction normalizeForQualify(record) {\n  var f = (record && record.fields) || {};\n  return {\n    recordId: record && record.id,\n    companyName: qlTrim(f['Company Name']),\n    email: qlTrim(f['Email']).toLowerCase(),\n    city: qlTrim(f['City']),\n    website: qlTrim(f['Website']),\n    fit: qlTrim(f['Fit']),\n    status: qlTrim(f['Status'])\n  };\n}\n\n/**\n * Build a run's worth of work.\n *\n * Two leads at the same domain (two contacts at one company) only need one\n * page fetch and one API call; the second inherits the first's verdict, which\n * is both cheaper and more consistent.\n */\nfunction buildQualifyQueue(records, ctx) {\n  var c = ctx || {};\n  var cap = Number(c.perRunCap) > 0 ? Math.floor(Number(c.perRunCap)) : 50;\n\n  var list = [];\n  var incoming = records || [];\n  for (var i = 0; i < incoming.length; i++) {\n    if (incoming[i] && incoming[i].id) list.push(normalizeForQualify(incoming[i]));\n  }\n\n  var queue = [];\n  var skipped = [];\n  var seenDomain = {};\n\n  for (var n = 0; n < list.length; n++) {\n    var lead = list[n];\n    var resolved = resolveUrl(lead);\n\n    if (!resolved.url) {\n      // Not a rejection — we simply cannot look. Mark it and move on.\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        fit: 'Unsure',\n        reason: resolved.reason || 'No website could be resolved.',\n        unresolvable: true\n      });\n      continue;\n    }\n\n    var host = resolved.url.replace(/^https?:\\/\\//i, '').split('/')[0].toLowerCase();\n    if (seenDomain[host]) {\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        reason: 'Same domain as record ' + seenDomain[host] + ' in this run.',\n        duplicateOf: seenDomain[host],\n        unresolvable: false\n      });\n      continue;\n    }\n    seenDomain[host] = lead.recordId;\n\n    lead.qualifyUrl = resolved.url;\n    lead.urlSource = resolved.source;\n    lead.host = host;\n    queue.push(lead);\n  }\n\n  var overflow = queue.slice(cap);\n  for (var o = 0; o < overflow.length; o++) {\n    skipped.push({\n      recordId: overflow[o].recordId,\n      email: overflow[o].email,\n      reason: 'Over the ' + cap + '-per-run cap; picked up next run.',\n      unresolvable: false\n    });\n  }\n\n  var final = queue.slice(0, cap);\n  for (var q = 0; q < final.length; q++) {\n    final[q].position = q + 1;\n    final[q].queueSize = final.length;\n  }\n\n  return {\n    queue: final,\n    skipped: skipped,\n    stats: {\n      fetched: list.length,\n      resolvable: queue.length,\n      queued: final.length,\n      skipped: skipped.length,\n      cap: cap\n    }\n  };\n}\n\n// ----- node body: src/nodes/w3-03-schema-report.js -----\n\n// n8n Code node — \"Fit Columns Ready\" (Run Once for All Items)\n//\n// Fires once, on the schema loop's \"done\" output, and emits the Airtable fetch\n// for leads that still need checking.\n\nvar cfg = $('W3 Config').first().json.cfg;\n\nvar plan = [];\ntry {\n  plan = $('Plan Fit Columns').all().map(function (i) { return i.json; });\n} catch (e) {\n  plan = [];\n}\n\nvar summary = null;\nvar expected = [];\nfor (var p = 0; p < plan.length; p++) {\n  if (plan[p].op === 'plan-summary') summary = plan[p];\n  else expected.push(plan[p]);\n}\n\nvar responses = [];\nfor (var run = 0; run < 50; run++) {\n  var chunk;\n  try {\n    chunk = $('Apply Fit Column Change').all(0, run);\n  } catch (e) {\n    break;\n  }\n  if (!chunk || !chunk.length) break;\n  for (var k = 0; k < chunk.length; k++) responses.push(chunk[k].json);\n}\n\nvar applied = [];\nvar failed = [];\nfor (var r = 0; r < responses.length; r++) {\n  var res = responses[r];\n  if (res && res.error) failed.push(res.error);\n  else if (res && (res.id || res.name || res.options)) applied.push(res.name || res.id);\n}\n\nif (failed.length || applied.length < expected.length) {\n  throw new Error(\n    'Could not create the qualification columns (' + applied.length + ' of ' +\n    expected.length + ').\\n' +\n    (failed.length ? JSON.stringify(failed).slice(0, 700) + '\\n' : '') +\n    'The Airtable token needs the \"schema.bases:write\" scope. No lead was qualified.'\n  );\n}\n\nif (applied.length) console.log('[' + cfg.runId + '] created: ' + applied.join(', '));\n\n// FORCE_REQUALIFY widens the fetch to every uncontacted lead, judged or not.\nvar formula = cfg.forceRequalify\n  ? 'AND({Email} != \"\", OR({Status} = \"\", {Status} = \"New\", {Status} = \"Queued\"))'\n  : qualifyFetchFormula();\n\nreturn [{\n  json: {\n    schemaReady: true,\n    tableId: summary ? summary.tableId : null,\n    columnsCreated: applied,\n    listUrl: cfg.airtableApiBase + '/' + cfg.baseId + '/' + encodeURIComponent(cfg.tableName),\n    filterByFormula: formula,\n    pageSize: 100\n  }\n}];\n"
+      },
+      "id": "Fit Columns Ready",
+      "name": "Fit Columns Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -40
+      ],
+      "notes": "Runs once. Aborts if a column could not be created.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "offset",
+                    "value": "={{ $response.body.offset }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.offset }}",
+              "limitPagesFetched": true,
+              "maxRequestCount": 20
+            }
+          }
+        },
+        "url": "={{ $json.listUrl }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filterByFormula",
+              "value": "={{ $json.filterByFormula }}"
+            },
+            {
+              "name": "pageSize",
+              "value": "={{ $json.pageSize }}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Fetch Unqualified Leads",
+      "name": "Fetch Unqualified Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        -40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Only leads not yet judged AND not yet contacted.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-04-build-queue.js + src/lib/{qualify}.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- inlined: src/lib/qualify.js -----\n/**\n * qualify.js — the lead qualification pass (Workflow 3).\n *\n * What this does and, more importantly, what it does NOT do.\n *\n * It reads a company's website and decides whether they belong on the list at\n * all. It does not write, suggest, or influence a single word of the email.\n * That separation is deliberate:\n *\n *  - Generated openers (\"I came across your portfolio of transitional kitchen\n *    remodels...\") are the most recognizable pattern in cold email. They read\n *    as more of a pitch, not less.\n *  - Anything a model writes into a live email is untestable. The rest of this\n *    system is deterministic and covered by tests; a hallucinated detail in a\n *    cold email is not recoverable.\n *  - Targeting is where the leverage actually is at 30 sends/day. Not sending\n *    to a roofer beats any amount of clever phrasing.\n *\n * So the model answers narrow factual questions, the answer lands in a column,\n * and Workflow 1 skips the clear mismatches. Fixed copy, better list.\n *\n * FAIL-OPEN, everywhere. A dead site, a timeout, an API outage, a blocked\n * scraper — all resolve to \"Unsure\", which is still contacted. Only an\n * explicit \"No\" is skipped. Never running Workflow 3 at all leaves Workflow 1\n * behaving exactly as it did before.\n */\n\n// This module deliberately depends on NOTHING else. Reaching for templates.js\n// (which has an identical whitespace helper) would inline the entire email copy\n// into Workflow 3's nodes, and the one property this workflow must have is that\n// the model cannot reach a single word that goes to a prospect.\n\n/** Mailbox providers whose domain tells us nothing about the business. */\nvar QL_FREEMAIL = [\n  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'hotmail.com',\n  'outlook.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com',\n  'mac.com', 'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',\n  'bellsouth.net', 'cox.net', 'charter.net', 'earthlink.net', 'protonmail.com',\n  'proton.me', 'gmx.com', 'mail.com', 'yandex.com', 'zoho.com'\n];\n\nvar QL_VERDICTS = ['Yes', 'Unsure', 'No'];\n\nvar QL_CATEGORIES = [\n  'kitchen_bath_remodeler', 'general_contractor', 'handyman',\n  'supplier_showroom', 'designer_only', 'other_trade', 'not_a_business',\n  'unknown'\n];\n\nvar QL_SIZES = ['solo', 'small_team', 'established', 'unknown'];\n\nfunction qlTrim(v) {\n  return v === null || v === undefined ? '' : String(v).trim();\n}\n\n/** Collapse whitespace and strip control characters. Local by design. */\nfunction qlTidy(value) {\n  if (value === null || value === undefined) return '';\n  return String(value)\n    .replace(/[\\u0000-\\u001F\\u007F]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n/** Domain half of an email address, lowercased. */\nfunction domainOf(email) {\n  var at = qlTrim(email).toLowerCase().split('@');\n  return at.length === 2 && at[1] ? at[1] : null;\n}\n\nfunction isFreemail(email) {\n  var d = domainOf(email);\n  return d ? QL_FREEMAIL.indexOf(d) !== -1 : false;\n}\n\n/**\n * Where to look for this company's site.\n *\n * A `Website` column wins if the user has one. Otherwise the email domain is a\n * good guess for a small contractor — dana@mapleridgekitchens.com is almost\n * certainly mapleridgekitchens.com. A free mailbox tells us nothing, so those\n * leads are left unchecked rather than guessed at.\n */\nfunction resolveUrl(lead) {\n  var explicit = qlTrim(lead && (lead.website || lead['Website'] || lead['Site'] || lead['URL']));\n  if (explicit) {\n    var url = explicit;\n    if (!/^https?:\\/\\//i.test(url)) url = 'https://' + url.replace(/^\\/+/, '');\n    if (/^https?:\\/\\/[^\\s/.]+\\.[^\\s/]{2,}/i.test(url)) {\n      return { url: url.split('#')[0], source: 'website-column' };\n    }\n    return { url: null, source: 'website-column', reason: 'Website column is not a usable URL.' };\n  }\n\n  var email = qlTrim(lead && (lead.email || lead['Email']));\n  if (!email) return { url: null, source: 'none', reason: 'No website and no email address.' };\n  if (isFreemail(email)) {\n    return { url: null, source: 'freemail', reason: 'Free mailbox (' + domainOf(email) + ') — no company site to read.' };\n  }\n  var d = domainOf(email);\n  if (!d || d.indexOf('.') === -1) {\n    return { url: null, source: 'email-domain', reason: 'Email domain is unusable.' };\n  }\n  return { url: 'https://' + d, source: 'email-domain' };\n}\n\n/**\n * HTML -> readable text.\n *\n * Scripts, styles, nav chrome and SVG are dropped first: they are most of the\n * bytes and none of the signal, and every token we send costs money.\n */\nfunction htmlToText(html, maxChars) {\n  var limit = maxChars || 6000;\n  var text = String(html || '');\n\n  var title = '';\n  var titleMatch = /<title[^>]*>([\\s\\S]{0,300}?)<\\/title>/i.exec(text);\n  if (titleMatch) title = titleMatch[1];\n\n  var description = '';\n  var descMatch = /<meta[^>]+name=[\"']description[\"'][^>]*content=[\"']([\\s\\S]{0,400}?)[\"']/i.exec(text);\n  if (descMatch) description = descMatch[1];\n\n  var body = text\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<!--[\\s\\S]*?-->/g, ' ')\n    .replace(/<\\/(p|div|li|h[1-6]|tr|section|article)>/gi, '\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&quot;/gi, '\"')\n    .replace(/[ \\t ]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n\n  var head = [];\n  if (title) head.push('PAGE TITLE: ' + qlTidy(title));\n  if (description) head.push('META DESCRIPTION: ' + qlTidy(description));\n  var joined = (head.length ? head.join('\\n') + '\\n\\n' : '') + body;\n\n  return {\n    title: qlTidy(title),\n    description: qlTidy(description),\n    text: joined.slice(0, limit),\n    truncated: joined.length > limit,\n    originalLength: joined.length\n  };\n}\n\n/**\n * Is there enough on the page to judge anything?\n * A parked domain, a JS-only shell or a 404 gives us nothing, and asking the\n * model to guess from 40 words produces confident nonsense.\n */\nfunction isUsablePage(page, minChars) {\n  var min = minChars || 200;\n  if (!page || !page.text) return false;\n  var words = page.text.replace(/\\s+/g, ' ').trim();\n  if (words.length < min) return false;\n  if (/domain (is )?(for sale|parked)|buy this domain|coming soon|under construction|website is being/i.test(words.slice(0, 600))) {\n    return false;\n  }\n  return true;\n}\n\nvar QL_SYSTEM_PROMPT = [\n  'You qualify leads for a B2B outreach list. You are shown text scraped from',\n  'one company website and you decide whether that company belongs on the list.',\n  '',\n  'The list targets KITCHEN AND BATH REMODELING CONTRACTORS in the US who:',\n  '  - sell and install full kitchen and/or bathroom remodels for homeowners, and',\n  '  - are large enough to run a quoting/estimating process (not a lone handyman).',\n  '',\n  'Answer \"No\" when the company is any of:',\n  '  - a supplier, showroom or fabricator that does not install',\n  '  - a handyman or odd-jobs service',\n  '  - an interior designer or architect who does not do the build',\n  '  - an unrelated trade (roofing, HVAC, landscaping, plumbing-only, electrical,',\n  '    flooring-only, painting, pools, restoration, cleaning)',\n  '  - a franchise portal, directory, marketplace or lead-gen site',\n  '  - a parked, dead or non-business page',\n  '',\n  'Answer \"Unsure\" when the page is too thin or too ambiguous to tell.',\n  '',\n  'Be strict. A wrong \"Yes\" wastes a send and risks a spam complaint; a wrong',\n  '\"No\" only costs one lead. Judge ONLY from the text shown - never guess from',\n  'the company name, and never invent details that are not on the page.',\n  '',\n  'Reply with a single JSON object and nothing else. No prose, no code fence:',\n  '{',\n  '  \"fit\": \"Yes\" | \"Unsure\" | \"No\",',\n  '  \"category\": \"kitchen_bath_remodeler\" | \"general_contractor\" | \"handyman\" |',\n  '              \"supplier_showroom\" | \"designer_only\" | \"other_trade\" |',\n  '              \"not_a_business\" | \"unknown\",',\n  '  \"size\": \"solo\" | \"small_team\" | \"established\" | \"unknown\",',\n  '  \"does_kitchens\": true | false,',\n  '  \"does_baths\": true | false,',\n  '  \"has_existing_crm\": true | false,',\n  '  \"reason\": \"<= 20 words, quoting evidence from the page\"',\n  '}',\n  '',\n  'has_existing_crm means the page advertises online booking, instant quoting or',\n  'automated follow-up.'\n].join('\\n');\n\n/**\n * Build the Anthropic Messages API request body.\n *\n * Low effort: this is a short classification, not a reasoning problem, and\n * effort is the first thing that should come down on a per-lead cost.\n */\nfunction buildClaudeRequest(page, lead, opts) {\n  var o = opts || {};\n  var company = qlTrim(lead && (lead.companyName || lead['Company Name'])) || '(unknown)';\n  var city = qlTrim(lead && (lead.city || lead['City']));\n\n  var userText = [\n    'Company name on the list: ' + company,\n    city ? 'City on the list: ' + city : null,\n    'Website: ' + (lead.qualifyUrl || '(unknown)'),\n    '',\n    '--- BEGIN PAGE TEXT ---',\n    page.text,\n    '--- END PAGE TEXT ---'\n  ].filter(Boolean).join('\\n');\n\n  return {\n    model: o.model || 'claude-sonnet-5',\n    max_tokens: o.maxTokens || 2000,\n    system: QL_SYSTEM_PROMPT,\n    output_config: { effort: o.effort || 'low' },\n    messages: [{ role: 'user', content: userText }]\n  };\n}\n\n/** Pull the assistant's text out of a Messages API response. */\nfunction textFromResponse(response) {\n  var blocks = (response && response.content) || [];\n  var out = [];\n  for (var i = 0; i < blocks.length; i++) {\n    // Skip thinking blocks; take the visible answer only.\n    if (blocks[i] && blocks[i].type === 'text' && blocks[i].text) out.push(blocks[i].text);\n  }\n  return out.join('\\n').trim();\n}\n\n/** Find the first balanced {...} in a string, tolerating a stray code fence. */\nfunction extractJson(text) {\n  if (!text) return null;\n  var cleaned = String(text).replace(/```(?:json)?/gi, '');\n  var start = cleaned.indexOf('{');\n  if (start === -1) return null;\n  var depth = 0;\n  var inString = false;\n  var escaped = false;\n  for (var i = start; i < cleaned.length; i++) {\n    var ch = cleaned[i];\n    if (escaped) { escaped = false; continue; }\n    if (ch === '\\\\') { escaped = true; continue; }\n    if (ch === '\"') { inString = !inString; continue; }\n    if (inString) continue;\n    if (ch === '{') depth++;\n    else if (ch === '}') {\n      depth--;\n      if (depth === 0) {\n        try {\n          return JSON.parse(cleaned.slice(start, i + 1));\n        } catch (e) {\n          return null;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nfunction oneOf(value, allowed, fallback) {\n  var v = qlTrim(value).toLowerCase();\n  for (var i = 0; i < allowed.length; i++) {\n    if (String(allowed[i]).toLowerCase() === v) return allowed[i];\n  }\n  return fallback;\n}\n\n/**\n * Turn a raw API response (or a failure) into a verdict we are willing to\n * write to Airtable.\n *\n * Every unhappy path lands on \"Unsure\", never \"No\". A model that returns\n * garbage, an API that 500s, a page we could not read — none of those are\n * evidence that the company is a bad fit, and treating them as such would\n * silently delete leads.\n */\nfunction parseVerdict(response, opts) {\n  var o = opts || {};\n\n  if (o.httpError || !response) {\n    return unsure('Qualification API unreachable: ' + String(o.httpError || 'no response').slice(0, 120));\n  }\n  if (response.type === 'error' || response.error) {\n    var msg = (response.error && (response.error.message || response.error.type)) || 'API error';\n    return unsure('Qualification API error: ' + String(msg).slice(0, 120));\n  }\n  if (response.stop_reason === 'refusal') {\n    return unsure('Model declined to classify this page.');\n  }\n\n  var parsed = extractJson(textFromResponse(response));\n  if (!parsed || typeof parsed !== 'object') {\n    return unsure('Model did not return usable JSON.');\n  }\n\n  var fit = oneOf(parsed.fit, QL_VERDICTS, null);\n  if (!fit) return unsure('Model returned an unrecognized verdict.');\n\n  var usage = response.usage || {};\n  return {\n    fit: fit,\n    category: oneOf(parsed.category, QL_CATEGORIES, 'unknown'),\n    size: oneOf(parsed.size, QL_SIZES, 'unknown'),\n    doesKitchens: parsed.does_kitchens === true,\n    doesBaths: parsed.does_baths === true,\n    hasExistingCrm: parsed.has_existing_crm === true,\n    reason: qlTrim(parsed.reason).slice(0, 300) || 'No reason given.',\n    inputTokens: Number(usage.input_tokens) || 0,\n    outputTokens: Number(usage.output_tokens) || 0,\n    ok: true\n  };\n\n  function unsure(reason) {\n    return {\n      fit: 'Unsure',\n      category: 'unknown',\n      size: 'unknown',\n      doesKitchens: false,\n      doesBaths: false,\n      hasExistingCrm: false,\n      reason: reason,\n      inputTokens: 0,\n      outputTokens: 0,\n      ok: false\n    };\n  }\n}\n\n/** Rough USD cost of one classification, for the run summary. */\nfunction estimateCost(inputTokens, outputTokens, pricing) {\n  var p = pricing || { inputPerMillion: 2.0, outputPerMillion: 10.0 }; // claude-sonnet-5\n  return (inputTokens / 1e6) * p.inputPerMillion + (outputTokens / 1e6) * p.outputPerMillion;\n}\n\n/**\n * Airtable formula for leads that still need checking.\n *\n * Only leads that have not been contacted yet: re-qualifying someone already\n * mid-sequence changes nothing, because Workflow 1 will not stop a sequence on\n * a fit verdict — only on a reply or an opt-out.\n */\nfunction qualifyFetchFormula() {\n  return [\n    'AND(',\n    '  {Email} != \"\",',\n    '  OR({Fit} = \"\", {Fit} = \"Unchecked\"),',\n    '  OR({Status} = \"\", {Status} = \"New\", {Status} = \"Queued\")',\n    ')'\n  ].join('').replace(/\\s+/g, ' ');\n}\n\n/** Normalize one Airtable record for the qualification pass. */\nfunction normalizeForQualify(record) {\n  var f = (record && record.fields) || {};\n  return {\n    recordId: record && record.id,\n    companyName: qlTrim(f['Company Name']),\n    email: qlTrim(f['Email']).toLowerCase(),\n    city: qlTrim(f['City']),\n    website: qlTrim(f['Website']),\n    fit: qlTrim(f['Fit']),\n    status: qlTrim(f['Status'])\n  };\n}\n\n/**\n * Build a run's worth of work.\n *\n * Two leads at the same domain (two contacts at one company) only need one\n * page fetch and one API call; the second inherits the first's verdict, which\n * is both cheaper and more consistent.\n */\nfunction buildQualifyQueue(records, ctx) {\n  var c = ctx || {};\n  var cap = Number(c.perRunCap) > 0 ? Math.floor(Number(c.perRunCap)) : 50;\n\n  var list = [];\n  var incoming = records || [];\n  for (var i = 0; i < incoming.length; i++) {\n    if (incoming[i] && incoming[i].id) list.push(normalizeForQualify(incoming[i]));\n  }\n\n  var queue = [];\n  var skipped = [];\n  var seenDomain = {};\n\n  for (var n = 0; n < list.length; n++) {\n    var lead = list[n];\n    var resolved = resolveUrl(lead);\n\n    if (!resolved.url) {\n      // Not a rejection — we simply cannot look. Mark it and move on.\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        fit: 'Unsure',\n        reason: resolved.reason || 'No website could be resolved.',\n        unresolvable: true\n      });\n      continue;\n    }\n\n    var host = resolved.url.replace(/^https?:\\/\\//i, '').split('/')[0].toLowerCase();\n    if (seenDomain[host]) {\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        reason: 'Same domain as record ' + seenDomain[host] + ' in this run.',\n        duplicateOf: seenDomain[host],\n        unresolvable: false\n      });\n      continue;\n    }\n    seenDomain[host] = lead.recordId;\n\n    lead.qualifyUrl = resolved.url;\n    lead.urlSource = resolved.source;\n    lead.host = host;\n    queue.push(lead);\n  }\n\n  var overflow = queue.slice(cap);\n  for (var o = 0; o < overflow.length; o++) {\n    skipped.push({\n      recordId: overflow[o].recordId,\n      email: overflow[o].email,\n      reason: 'Over the ' + cap + '-per-run cap; picked up next run.',\n      unresolvable: false\n    });\n  }\n\n  var final = queue.slice(0, cap);\n  for (var q = 0; q < final.length; q++) {\n    final[q].position = q + 1;\n    final[q].queueSize = final.length;\n  }\n\n  return {\n    queue: final,\n    skipped: skipped,\n    stats: {\n      fetched: list.length,\n      resolvable: queue.length,\n      queued: final.length,\n      skipped: skipped.length,\n      cap: cap\n    }\n  };\n}\n\n// ----- node body: src/nodes/w3-04-build-queue.js -----\n\n// n8n Code node — \"Build Qualification Queue\" (Run Once for All Items)\n//\n// Resolves a website for each lead (Website column, else the email domain),\n// drops free-mailbox leads and same-domain duplicates, and caps the run.\n\nvar cfg = $('W3 Config').first().json.cfg;\n\nvar records = [];\nvar incoming = $input.all();\nfor (var n = 0; n < incoming.length; n++) {\n  var j = incoming[n].json;\n  if (j && Array.isArray(j.records)) records = records.concat(j.records);\n  else if (j && j.id) records.push(j);\n}\n\nvar built = buildQualifyQueue(records, { perRunCap: cfg.perRunCap });\n\nconsole.log('[' + cfg.runId + '] queue=' + built.stats.queued + '/' + built.stats.fetched +\n  ' (' + built.stats.skipped + ' skipped)');\n\n// Leads with no readable site still get a row written, so they are not\n// re-attempted every hour forever. \"Unsure\" means they are still contacted.\nvar unresolvable = built.skipped.filter(function (s) { return s.unresolvable; });\nfor (var u = 0; u < unresolvable.length; u++) {\n  console.log('  no site ' + unresolvable[u].recordId + ': ' + unresolvable[u].reason);\n}\n\nvar items = built.queue.map(function (lead) {\n  return {\n    json: {\n      runId: cfg.runId,\n      recordId: lead.recordId,\n      email: lead.email,\n      companyName: lead.companyName,\n      city: lead.city,\n      qualifyUrl: lead.qualifyUrl,\n      urlSource: lead.urlSource,\n      host: lead.host,\n      position: lead.position,\n      queueSize: lead.queueSize,\n      route: 'fetch'\n    }\n  };\n});\n\n// Append the unreadable ones so they flow through the same commit path.\nfor (var v = 0; v < unresolvable.length; v++) {\n  items.push({\n    json: {\n      runId: cfg.runId,\n      recordId: unresolvable[v].recordId,\n      email: unresolvable[v].email,\n      qualifyUrl: null,\n      route: 'unreadable',\n      verdict: {\n        fit: 'Unsure',\n        category: 'unknown',\n        size: 'unknown',\n        doesKitchens: false,\n        doesBaths: false,\n        hasExistingCrm: false,\n        reason: unresolvable[v].reason,\n        inputTokens: 0,\n        outputTokens: 0,\n        ok: false\n      }\n    }\n  });\n}\n\nif (!items.length) {\n  return [{ json: { __empty: true, runId: cfg.runId, stats: built.stats } }];\n}\nitems[0].json.stats = built.stats;\nreturn items;\n"
+      },
+      "id": "Build Qualification Queue",
+      "name": "Build Qualification Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        -40
+      ],
+      "notes": "Resolves a URL per lead (Website column, else email domain). Drops free mailboxes and same-domain duplicates.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.__empty }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Anything to Check?",
+      "name": "Anything to Check?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        -40
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "Loop Over Leads",
+      "name": "Loop Over Leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1520,
+        -40
+      ],
+      "notes": "One lead at a time. Output 0 = done, output 1 = loop.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "fetch",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Readable?",
+      "name": "Readable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        100
+      ],
+      "notes": "Leads with no resolvable site skip straight to a stored \"Unsure\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "options": {
+          "timeout": "={{ $('W3 Config').first().json.cfg.fetchTimeoutMs }}",
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "neverError": true
+            }
+          }
+        },
+        "url": "={{ $json.qualifyUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; LeadQualifier/1.0)"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml"
+            }
+          ]
+        }
+      },
+      "id": "Fetch Website",
+      "name": "Fetch Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        20
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "A timeout, 404 or blocked scraper arrives as data, not a crash.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-05-extract-page.js + src/lib/{qualify}.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- inlined: src/lib/qualify.js -----\n/**\n * qualify.js — the lead qualification pass (Workflow 3).\n *\n * What this does and, more importantly, what it does NOT do.\n *\n * It reads a company's website and decides whether they belong on the list at\n * all. It does not write, suggest, or influence a single word of the email.\n * That separation is deliberate:\n *\n *  - Generated openers (\"I came across your portfolio of transitional kitchen\n *    remodels...\") are the most recognizable pattern in cold email. They read\n *    as more of a pitch, not less.\n *  - Anything a model writes into a live email is untestable. The rest of this\n *    system is deterministic and covered by tests; a hallucinated detail in a\n *    cold email is not recoverable.\n *  - Targeting is where the leverage actually is at 30 sends/day. Not sending\n *    to a roofer beats any amount of clever phrasing.\n *\n * So the model answers narrow factual questions, the answer lands in a column,\n * and Workflow 1 skips the clear mismatches. Fixed copy, better list.\n *\n * FAIL-OPEN, everywhere. A dead site, a timeout, an API outage, a blocked\n * scraper — all resolve to \"Unsure\", which is still contacted. Only an\n * explicit \"No\" is skipped. Never running Workflow 3 at all leaves Workflow 1\n * behaving exactly as it did before.\n */\n\n// This module deliberately depends on NOTHING else. Reaching for templates.js\n// (which has an identical whitespace helper) would inline the entire email copy\n// into Workflow 3's nodes, and the one property this workflow must have is that\n// the model cannot reach a single word that goes to a prospect.\n\n/** Mailbox providers whose domain tells us nothing about the business. */\nvar QL_FREEMAIL = [\n  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'hotmail.com',\n  'outlook.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com',\n  'mac.com', 'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',\n  'bellsouth.net', 'cox.net', 'charter.net', 'earthlink.net', 'protonmail.com',\n  'proton.me', 'gmx.com', 'mail.com', 'yandex.com', 'zoho.com'\n];\n\nvar QL_VERDICTS = ['Yes', 'Unsure', 'No'];\n\nvar QL_CATEGORIES = [\n  'kitchen_bath_remodeler', 'general_contractor', 'handyman',\n  'supplier_showroom', 'designer_only', 'other_trade', 'not_a_business',\n  'unknown'\n];\n\nvar QL_SIZES = ['solo', 'small_team', 'established', 'unknown'];\n\nfunction qlTrim(v) {\n  return v === null || v === undefined ? '' : String(v).trim();\n}\n\n/** Collapse whitespace and strip control characters. Local by design. */\nfunction qlTidy(value) {\n  if (value === null || value === undefined) return '';\n  return String(value)\n    .replace(/[\\u0000-\\u001F\\u007F]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n/** Domain half of an email address, lowercased. */\nfunction domainOf(email) {\n  var at = qlTrim(email).toLowerCase().split('@');\n  return at.length === 2 && at[1] ? at[1] : null;\n}\n\nfunction isFreemail(email) {\n  var d = domainOf(email);\n  return d ? QL_FREEMAIL.indexOf(d) !== -1 : false;\n}\n\n/**\n * Where to look for this company's site.\n *\n * A `Website` column wins if the user has one. Otherwise the email domain is a\n * good guess for a small contractor — dana@mapleridgekitchens.com is almost\n * certainly mapleridgekitchens.com. A free mailbox tells us nothing, so those\n * leads are left unchecked rather than guessed at.\n */\nfunction resolveUrl(lead) {\n  var explicit = qlTrim(lead && (lead.website || lead['Website'] || lead['Site'] || lead['URL']));\n  if (explicit) {\n    var url = explicit;\n    if (!/^https?:\\/\\//i.test(url)) url = 'https://' + url.replace(/^\\/+/, '');\n    if (/^https?:\\/\\/[^\\s/.]+\\.[^\\s/]{2,}/i.test(url)) {\n      return { url: url.split('#')[0], source: 'website-column' };\n    }\n    return { url: null, source: 'website-column', reason: 'Website column is not a usable URL.' };\n  }\n\n  var email = qlTrim(lead && (lead.email || lead['Email']));\n  if (!email) return { url: null, source: 'none', reason: 'No website and no email address.' };\n  if (isFreemail(email)) {\n    return { url: null, source: 'freemail', reason: 'Free mailbox (' + domainOf(email) + ') — no company site to read.' };\n  }\n  var d = domainOf(email);\n  if (!d || d.indexOf('.') === -1) {\n    return { url: null, source: 'email-domain', reason: 'Email domain is unusable.' };\n  }\n  return { url: 'https://' + d, source: 'email-domain' };\n}\n\n/**\n * HTML -> readable text.\n *\n * Scripts, styles, nav chrome and SVG are dropped first: they are most of the\n * bytes and none of the signal, and every token we send costs money.\n */\nfunction htmlToText(html, maxChars) {\n  var limit = maxChars || 6000;\n  var text = String(html || '');\n\n  var title = '';\n  var titleMatch = /<title[^>]*>([\\s\\S]{0,300}?)<\\/title>/i.exec(text);\n  if (titleMatch) title = titleMatch[1];\n\n  var description = '';\n  var descMatch = /<meta[^>]+name=[\"']description[\"'][^>]*content=[\"']([\\s\\S]{0,400}?)[\"']/i.exec(text);\n  if (descMatch) description = descMatch[1];\n\n  var body = text\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<!--[\\s\\S]*?-->/g, ' ')\n    .replace(/<\\/(p|div|li|h[1-6]|tr|section|article)>/gi, '\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&quot;/gi, '\"')\n    .replace(/[ \\t ]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n\n  var head = [];\n  if (title) head.push('PAGE TITLE: ' + qlTidy(title));\n  if (description) head.push('META DESCRIPTION: ' + qlTidy(description));\n  var joined = (head.length ? head.join('\\n') + '\\n\\n' : '') + body;\n\n  return {\n    title: qlTidy(title),\n    description: qlTidy(description),\n    text: joined.slice(0, limit),\n    truncated: joined.length > limit,\n    originalLength: joined.length\n  };\n}\n\n/**\n * Is there enough on the page to judge anything?\n * A parked domain, a JS-only shell or a 404 gives us nothing, and asking the\n * model to guess from 40 words produces confident nonsense.\n */\nfunction isUsablePage(page, minChars) {\n  var min = minChars || 200;\n  if (!page || !page.text) return false;\n  var words = page.text.replace(/\\s+/g, ' ').trim();\n  if (words.length < min) return false;\n  if (/domain (is )?(for sale|parked)|buy this domain|coming soon|under construction|website is being/i.test(words.slice(0, 600))) {\n    return false;\n  }\n  return true;\n}\n\nvar QL_SYSTEM_PROMPT = [\n  'You qualify leads for a B2B outreach list. You are shown text scraped from',\n  'one company website and you decide whether that company belongs on the list.',\n  '',\n  'The list targets KITCHEN AND BATH REMODELING CONTRACTORS in the US who:',\n  '  - sell and install full kitchen and/or bathroom remodels for homeowners, and',\n  '  - are large enough to run a quoting/estimating process (not a lone handyman).',\n  '',\n  'Answer \"No\" when the company is any of:',\n  '  - a supplier, showroom or fabricator that does not install',\n  '  - a handyman or odd-jobs service',\n  '  - an interior designer or architect who does not do the build',\n  '  - an unrelated trade (roofing, HVAC, landscaping, plumbing-only, electrical,',\n  '    flooring-only, painting, pools, restoration, cleaning)',\n  '  - a franchise portal, directory, marketplace or lead-gen site',\n  '  - a parked, dead or non-business page',\n  '',\n  'Answer \"Unsure\" when the page is too thin or too ambiguous to tell.',\n  '',\n  'Be strict. A wrong \"Yes\" wastes a send and risks a spam complaint; a wrong',\n  '\"No\" only costs one lead. Judge ONLY from the text shown - never guess from',\n  'the company name, and never invent details that are not on the page.',\n  '',\n  'Reply with a single JSON object and nothing else. No prose, no code fence:',\n  '{',\n  '  \"fit\": \"Yes\" | \"Unsure\" | \"No\",',\n  '  \"category\": \"kitchen_bath_remodeler\" | \"general_contractor\" | \"handyman\" |',\n  '              \"supplier_showroom\" | \"designer_only\" | \"other_trade\" |',\n  '              \"not_a_business\" | \"unknown\",',\n  '  \"size\": \"solo\" | \"small_team\" | \"established\" | \"unknown\",',\n  '  \"does_kitchens\": true | false,',\n  '  \"does_baths\": true | false,',\n  '  \"has_existing_crm\": true | false,',\n  '  \"reason\": \"<= 20 words, quoting evidence from the page\"',\n  '}',\n  '',\n  'has_existing_crm means the page advertises online booking, instant quoting or',\n  'automated follow-up.'\n].join('\\n');\n\n/**\n * Build the Anthropic Messages API request body.\n *\n * Low effort: this is a short classification, not a reasoning problem, and\n * effort is the first thing that should come down on a per-lead cost.\n */\nfunction buildClaudeRequest(page, lead, opts) {\n  var o = opts || {};\n  var company = qlTrim(lead && (lead.companyName || lead['Company Name'])) || '(unknown)';\n  var city = qlTrim(lead && (lead.city || lead['City']));\n\n  var userText = [\n    'Company name on the list: ' + company,\n    city ? 'City on the list: ' + city : null,\n    'Website: ' + (lead.qualifyUrl || '(unknown)'),\n    '',\n    '--- BEGIN PAGE TEXT ---',\n    page.text,\n    '--- END PAGE TEXT ---'\n  ].filter(Boolean).join('\\n');\n\n  return {\n    model: o.model || 'claude-sonnet-5',\n    max_tokens: o.maxTokens || 2000,\n    system: QL_SYSTEM_PROMPT,\n    output_config: { effort: o.effort || 'low' },\n    messages: [{ role: 'user', content: userText }]\n  };\n}\n\n/** Pull the assistant's text out of a Messages API response. */\nfunction textFromResponse(response) {\n  var blocks = (response && response.content) || [];\n  var out = [];\n  for (var i = 0; i < blocks.length; i++) {\n    // Skip thinking blocks; take the visible answer only.\n    if (blocks[i] && blocks[i].type === 'text' && blocks[i].text) out.push(blocks[i].text);\n  }\n  return out.join('\\n').trim();\n}\n\n/** Find the first balanced {...} in a string, tolerating a stray code fence. */\nfunction extractJson(text) {\n  if (!text) return null;\n  var cleaned = String(text).replace(/```(?:json)?/gi, '');\n  var start = cleaned.indexOf('{');\n  if (start === -1) return null;\n  var depth = 0;\n  var inString = false;\n  var escaped = false;\n  for (var i = start; i < cleaned.length; i++) {\n    var ch = cleaned[i];\n    if (escaped) { escaped = false; continue; }\n    if (ch === '\\\\') { escaped = true; continue; }\n    if (ch === '\"') { inString = !inString; continue; }\n    if (inString) continue;\n    if (ch === '{') depth++;\n    else if (ch === '}') {\n      depth--;\n      if (depth === 0) {\n        try {\n          return JSON.parse(cleaned.slice(start, i + 1));\n        } catch (e) {\n          return null;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nfunction oneOf(value, allowed, fallback) {\n  var v = qlTrim(value).toLowerCase();\n  for (var i = 0; i < allowed.length; i++) {\n    if (String(allowed[i]).toLowerCase() === v) return allowed[i];\n  }\n  return fallback;\n}\n\n/**\n * Turn a raw API response (or a failure) into a verdict we are willing to\n * write to Airtable.\n *\n * Every unhappy path lands on \"Unsure\", never \"No\". A model that returns\n * garbage, an API that 500s, a page we could not read — none of those are\n * evidence that the company is a bad fit, and treating them as such would\n * silently delete leads.\n */\nfunction parseVerdict(response, opts) {\n  var o = opts || {};\n\n  if (o.httpError || !response) {\n    return unsure('Qualification API unreachable: ' + String(o.httpError || 'no response').slice(0, 120));\n  }\n  if (response.type === 'error' || response.error) {\n    var msg = (response.error && (response.error.message || response.error.type)) || 'API error';\n    return unsure('Qualification API error: ' + String(msg).slice(0, 120));\n  }\n  if (response.stop_reason === 'refusal') {\n    return unsure('Model declined to classify this page.');\n  }\n\n  var parsed = extractJson(textFromResponse(response));\n  if (!parsed || typeof parsed !== 'object') {\n    return unsure('Model did not return usable JSON.');\n  }\n\n  var fit = oneOf(parsed.fit, QL_VERDICTS, null);\n  if (!fit) return unsure('Model returned an unrecognized verdict.');\n\n  var usage = response.usage || {};\n  return {\n    fit: fit,\n    category: oneOf(parsed.category, QL_CATEGORIES, 'unknown'),\n    size: oneOf(parsed.size, QL_SIZES, 'unknown'),\n    doesKitchens: parsed.does_kitchens === true,\n    doesBaths: parsed.does_baths === true,\n    hasExistingCrm: parsed.has_existing_crm === true,\n    reason: qlTrim(parsed.reason).slice(0, 300) || 'No reason given.',\n    inputTokens: Number(usage.input_tokens) || 0,\n    outputTokens: Number(usage.output_tokens) || 0,\n    ok: true\n  };\n\n  function unsure(reason) {\n    return {\n      fit: 'Unsure',\n      category: 'unknown',\n      size: 'unknown',\n      doesKitchens: false,\n      doesBaths: false,\n      hasExistingCrm: false,\n      reason: reason,\n      inputTokens: 0,\n      outputTokens: 0,\n      ok: false\n    };\n  }\n}\n\n/** Rough USD cost of one classification, for the run summary. */\nfunction estimateCost(inputTokens, outputTokens, pricing) {\n  var p = pricing || { inputPerMillion: 2.0, outputPerMillion: 10.0 }; // claude-sonnet-5\n  return (inputTokens / 1e6) * p.inputPerMillion + (outputTokens / 1e6) * p.outputPerMillion;\n}\n\n/**\n * Airtable formula for leads that still need checking.\n *\n * Only leads that have not been contacted yet: re-qualifying someone already\n * mid-sequence changes nothing, because Workflow 1 will not stop a sequence on\n * a fit verdict — only on a reply or an opt-out.\n */\nfunction qualifyFetchFormula() {\n  return [\n    'AND(',\n    '  {Email} != \"\",',\n    '  OR({Fit} = \"\", {Fit} = \"Unchecked\"),',\n    '  OR({Status} = \"\", {Status} = \"New\", {Status} = \"Queued\")',\n    ')'\n  ].join('').replace(/\\s+/g, ' ');\n}\n\n/** Normalize one Airtable record for the qualification pass. */\nfunction normalizeForQualify(record) {\n  var f = (record && record.fields) || {};\n  return {\n    recordId: record && record.id,\n    companyName: qlTrim(f['Company Name']),\n    email: qlTrim(f['Email']).toLowerCase(),\n    city: qlTrim(f['City']),\n    website: qlTrim(f['Website']),\n    fit: qlTrim(f['Fit']),\n    status: qlTrim(f['Status'])\n  };\n}\n\n/**\n * Build a run's worth of work.\n *\n * Two leads at the same domain (two contacts at one company) only need one\n * page fetch and one API call; the second inherits the first's verdict, which\n * is both cheaper and more consistent.\n */\nfunction buildQualifyQueue(records, ctx) {\n  var c = ctx || {};\n  var cap = Number(c.perRunCap) > 0 ? Math.floor(Number(c.perRunCap)) : 50;\n\n  var list = [];\n  var incoming = records || [];\n  for (var i = 0; i < incoming.length; i++) {\n    if (incoming[i] && incoming[i].id) list.push(normalizeForQualify(incoming[i]));\n  }\n\n  var queue = [];\n  var skipped = [];\n  var seenDomain = {};\n\n  for (var n = 0; n < list.length; n++) {\n    var lead = list[n];\n    var resolved = resolveUrl(lead);\n\n    if (!resolved.url) {\n      // Not a rejection — we simply cannot look. Mark it and move on.\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        fit: 'Unsure',\n        reason: resolved.reason || 'No website could be resolved.',\n        unresolvable: true\n      });\n      continue;\n    }\n\n    var host = resolved.url.replace(/^https?:\\/\\//i, '').split('/')[0].toLowerCase();\n    if (seenDomain[host]) {\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        reason: 'Same domain as record ' + seenDomain[host] + ' in this run.',\n        duplicateOf: seenDomain[host],\n        unresolvable: false\n      });\n      continue;\n    }\n    seenDomain[host] = lead.recordId;\n\n    lead.qualifyUrl = resolved.url;\n    lead.urlSource = resolved.source;\n    lead.host = host;\n    queue.push(lead);\n  }\n\n  var overflow = queue.slice(cap);\n  for (var o = 0; o < overflow.length; o++) {\n    skipped.push({\n      recordId: overflow[o].recordId,\n      email: overflow[o].email,\n      reason: 'Over the ' + cap + '-per-run cap; picked up next run.',\n      unresolvable: false\n    });\n  }\n\n  var final = queue.slice(0, cap);\n  for (var q = 0; q < final.length; q++) {\n    final[q].position = q + 1;\n    final[q].queueSize = final.length;\n  }\n\n  return {\n    queue: final,\n    skipped: skipped,\n    stats: {\n      fetched: list.length,\n      resolvable: queue.length,\n      queued: final.length,\n      skipped: skipped.length,\n      cap: cap\n    }\n  };\n}\n\n// ----- node body: src/nodes/w3-05-extract-page.js -----\n\n// n8n Code node — \"Read Page\" (Run Once for All Items)\n//\n// Input: the raw website response (the HTTP node continues on error, so a\n// timeout, a 404 or a blocked scraper arrives here as data).\n// Output: either a Claude request to send, or a finished \"Unsure\" verdict.\n\nvar cfg = $('W3 Config').first().json.cfg;\n// Read the IF node's true output (branch 0), never the splitInBatches node —\n// $('node').first() defaults to branch 0, which on a loop node is \"done\".\nvar lead = $('Readable?').first().json;\nvar res = $input.first().json || {};\n\nfunction unreadable(reason) {\n  return [{\n    json: Object.assign({}, lead, {\n      route: 'unreadable',\n      verdict: {\n        fit: 'Unsure',\n        category: 'unknown',\n        size: 'unknown',\n        doesKitchens: false,\n        doesBaths: false,\n        hasExistingCrm: false,\n        reason: reason,\n        inputTokens: 0,\n        outputTokens: 0,\n        ok: false\n      }\n    })\n  }];\n}\n\nif (res.error) {\n  var detail = typeof res.error === 'string' ? res.error : JSON.stringify(res.error);\n  return unreadable('Could not load ' + lead.qualifyUrl + ': ' + detail.slice(0, 120));\n}\n\nvar html = res.data !== undefined ? res.data : (res.body !== undefined ? res.body : '');\nif (typeof html !== 'string') html = JSON.stringify(html);\n\nvar page = htmlToText(html, cfg.pageCharLimit);\n\nif (!isUsablePage(page)) {\n  return unreadable('Site has too little readable text to judge (' + page.originalLength + ' chars).');\n}\n\nconsole.log('[' + lead.runId + '] read ' + lead.qualifyUrl + ' -> ' + page.text.length +\n  ' chars' + (page.truncated ? ' (truncated)' : ''));\n\nreturn [{\n  json: Object.assign({}, lead, {\n    route: 'classify',\n    pageTitle: page.title,\n    pageChars: page.text.length,\n    claudeRequest: buildClaudeRequest(page, lead, {\n      model: cfg.claudeModel,\n      effort: cfg.claudeEffort,\n      maxTokens: cfg.claudeMaxTokens\n    })\n  })\n}];\n"
+      },
+      "id": "Read Page",
+      "name": "Read Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        20
+      ],
+      "notes": "HTML -> text, capped at PAGE_CHAR_LIMIT. Too thin to judge -> Unsure.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "classify",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Enough to Judge?",
+      "name": "Enough to Judge?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        20
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('W3 Config').first().json.cfg.claudeEndpoint }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "={{ $('W3 Config').first().json.cfg.claudeVersion }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claudeRequest) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Ask Claude",
+      "name": "Ask Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        -60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_ANTHROPIC_CRED_ID",
+          "name": "Anthropic API Key (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "Header credential: x-api-key. Classifies the page only — it never writes email copy.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-06-parse-verdict.js + src/lib/{qualify}.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- inlined: src/lib/qualify.js -----\n/**\n * qualify.js — the lead qualification pass (Workflow 3).\n *\n * What this does and, more importantly, what it does NOT do.\n *\n * It reads a company's website and decides whether they belong on the list at\n * all. It does not write, suggest, or influence a single word of the email.\n * That separation is deliberate:\n *\n *  - Generated openers (\"I came across your portfolio of transitional kitchen\n *    remodels...\") are the most recognizable pattern in cold email. They read\n *    as more of a pitch, not less.\n *  - Anything a model writes into a live email is untestable. The rest of this\n *    system is deterministic and covered by tests; a hallucinated detail in a\n *    cold email is not recoverable.\n *  - Targeting is where the leverage actually is at 30 sends/day. Not sending\n *    to a roofer beats any amount of clever phrasing.\n *\n * So the model answers narrow factual questions, the answer lands in a column,\n * and Workflow 1 skips the clear mismatches. Fixed copy, better list.\n *\n * FAIL-OPEN, everywhere. A dead site, a timeout, an API outage, a blocked\n * scraper — all resolve to \"Unsure\", which is still contacted. Only an\n * explicit \"No\" is skipped. Never running Workflow 3 at all leaves Workflow 1\n * behaving exactly as it did before.\n */\n\n// This module deliberately depends on NOTHING else. Reaching for templates.js\n// (which has an identical whitespace helper) would inline the entire email copy\n// into Workflow 3's nodes, and the one property this workflow must have is that\n// the model cannot reach a single word that goes to a prospect.\n\n/** Mailbox providers whose domain tells us nothing about the business. */\nvar QL_FREEMAIL = [\n  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'hotmail.com',\n  'outlook.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com',\n  'mac.com', 'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',\n  'bellsouth.net', 'cox.net', 'charter.net', 'earthlink.net', 'protonmail.com',\n  'proton.me', 'gmx.com', 'mail.com', 'yandex.com', 'zoho.com'\n];\n\nvar QL_VERDICTS = ['Yes', 'Unsure', 'No'];\n\nvar QL_CATEGORIES = [\n  'kitchen_bath_remodeler', 'general_contractor', 'handyman',\n  'supplier_showroom', 'designer_only', 'other_trade', 'not_a_business',\n  'unknown'\n];\n\nvar QL_SIZES = ['solo', 'small_team', 'established', 'unknown'];\n\nfunction qlTrim(v) {\n  return v === null || v === undefined ? '' : String(v).trim();\n}\n\n/** Collapse whitespace and strip control characters. Local by design. */\nfunction qlTidy(value) {\n  if (value === null || value === undefined) return '';\n  return String(value)\n    .replace(/[\\u0000-\\u001F\\u007F]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n/** Domain half of an email address, lowercased. */\nfunction domainOf(email) {\n  var at = qlTrim(email).toLowerCase().split('@');\n  return at.length === 2 && at[1] ? at[1] : null;\n}\n\nfunction isFreemail(email) {\n  var d = domainOf(email);\n  return d ? QL_FREEMAIL.indexOf(d) !== -1 : false;\n}\n\n/**\n * Where to look for this company's site.\n *\n * A `Website` column wins if the user has one. Otherwise the email domain is a\n * good guess for a small contractor — dana@mapleridgekitchens.com is almost\n * certainly mapleridgekitchens.com. A free mailbox tells us nothing, so those\n * leads are left unchecked rather than guessed at.\n */\nfunction resolveUrl(lead) {\n  var explicit = qlTrim(lead && (lead.website || lead['Website'] || lead['Site'] || lead['URL']));\n  if (explicit) {\n    var url = explicit;\n    if (!/^https?:\\/\\//i.test(url)) url = 'https://' + url.replace(/^\\/+/, '');\n    if (/^https?:\\/\\/[^\\s/.]+\\.[^\\s/]{2,}/i.test(url)) {\n      return { url: url.split('#')[0], source: 'website-column' };\n    }\n    return { url: null, source: 'website-column', reason: 'Website column is not a usable URL.' };\n  }\n\n  var email = qlTrim(lead && (lead.email || lead['Email']));\n  if (!email) return { url: null, source: 'none', reason: 'No website and no email address.' };\n  if (isFreemail(email)) {\n    return { url: null, source: 'freemail', reason: 'Free mailbox (' + domainOf(email) + ') — no company site to read.' };\n  }\n  var d = domainOf(email);\n  if (!d || d.indexOf('.') === -1) {\n    return { url: null, source: 'email-domain', reason: 'Email domain is unusable.' };\n  }\n  return { url: 'https://' + d, source: 'email-domain' };\n}\n\n/**\n * HTML -> readable text.\n *\n * Scripts, styles, nav chrome and SVG are dropped first: they are most of the\n * bytes and none of the signal, and every token we send costs money.\n */\nfunction htmlToText(html, maxChars) {\n  var limit = maxChars || 6000;\n  var text = String(html || '');\n\n  var title = '';\n  var titleMatch = /<title[^>]*>([\\s\\S]{0,300}?)<\\/title>/i.exec(text);\n  if (titleMatch) title = titleMatch[1];\n\n  var description = '';\n  var descMatch = /<meta[^>]+name=[\"']description[\"'][^>]*content=[\"']([\\s\\S]{0,400}?)[\"']/i.exec(text);\n  if (descMatch) description = descMatch[1];\n\n  var body = text\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<!--[\\s\\S]*?-->/g, ' ')\n    .replace(/<\\/(p|div|li|h[1-6]|tr|section|article)>/gi, '\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&quot;/gi, '\"')\n    .replace(/[ \\t ]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n\n  var head = [];\n  if (title) head.push('PAGE TITLE: ' + qlTidy(title));\n  if (description) head.push('META DESCRIPTION: ' + qlTidy(description));\n  var joined = (head.length ? head.join('\\n') + '\\n\\n' : '') + body;\n\n  return {\n    title: qlTidy(title),\n    description: qlTidy(description),\n    text: joined.slice(0, limit),\n    truncated: joined.length > limit,\n    originalLength: joined.length\n  };\n}\n\n/**\n * Is there enough on the page to judge anything?\n * A parked domain, a JS-only shell or a 404 gives us nothing, and asking the\n * model to guess from 40 words produces confident nonsense.\n */\nfunction isUsablePage(page, minChars) {\n  var min = minChars || 200;\n  if (!page || !page.text) return false;\n  var words = page.text.replace(/\\s+/g, ' ').trim();\n  if (words.length < min) return false;\n  if (/domain (is )?(for sale|parked)|buy this domain|coming soon|under construction|website is being/i.test(words.slice(0, 600))) {\n    return false;\n  }\n  return true;\n}\n\nvar QL_SYSTEM_PROMPT = [\n  'You qualify leads for a B2B outreach list. You are shown text scraped from',\n  'one company website and you decide whether that company belongs on the list.',\n  '',\n  'The list targets KITCHEN AND BATH REMODELING CONTRACTORS in the US who:',\n  '  - sell and install full kitchen and/or bathroom remodels for homeowners, and',\n  '  - are large enough to run a quoting/estimating process (not a lone handyman).',\n  '',\n  'Answer \"No\" when the company is any of:',\n  '  - a supplier, showroom or fabricator that does not install',\n  '  - a handyman or odd-jobs service',\n  '  - an interior designer or architect who does not do the build',\n  '  - an unrelated trade (roofing, HVAC, landscaping, plumbing-only, electrical,',\n  '    flooring-only, painting, pools, restoration, cleaning)',\n  '  - a franchise portal, directory, marketplace or lead-gen site',\n  '  - a parked, dead or non-business page',\n  '',\n  'Answer \"Unsure\" when the page is too thin or too ambiguous to tell.',\n  '',\n  'Be strict. A wrong \"Yes\" wastes a send and risks a spam complaint; a wrong',\n  '\"No\" only costs one lead. Judge ONLY from the text shown - never guess from',\n  'the company name, and never invent details that are not on the page.',\n  '',\n  'Reply with a single JSON object and nothing else. No prose, no code fence:',\n  '{',\n  '  \"fit\": \"Yes\" | \"Unsure\" | \"No\",',\n  '  \"category\": \"kitchen_bath_remodeler\" | \"general_contractor\" | \"handyman\" |',\n  '              \"supplier_showroom\" | \"designer_only\" | \"other_trade\" |',\n  '              \"not_a_business\" | \"unknown\",',\n  '  \"size\": \"solo\" | \"small_team\" | \"established\" | \"unknown\",',\n  '  \"does_kitchens\": true | false,',\n  '  \"does_baths\": true | false,',\n  '  \"has_existing_crm\": true | false,',\n  '  \"reason\": \"<= 20 words, quoting evidence from the page\"',\n  '}',\n  '',\n  'has_existing_crm means the page advertises online booking, instant quoting or',\n  'automated follow-up.'\n].join('\\n');\n\n/**\n * Build the Anthropic Messages API request body.\n *\n * Low effort: this is a short classification, not a reasoning problem, and\n * effort is the first thing that should come down on a per-lead cost.\n */\nfunction buildClaudeRequest(page, lead, opts) {\n  var o = opts || {};\n  var company = qlTrim(lead && (lead.companyName || lead['Company Name'])) || '(unknown)';\n  var city = qlTrim(lead && (lead.city || lead['City']));\n\n  var userText = [\n    'Company name on the list: ' + company,\n    city ? 'City on the list: ' + city : null,\n    'Website: ' + (lead.qualifyUrl || '(unknown)'),\n    '',\n    '--- BEGIN PAGE TEXT ---',\n    page.text,\n    '--- END PAGE TEXT ---'\n  ].filter(Boolean).join('\\n');\n\n  return {\n    model: o.model || 'claude-sonnet-5',\n    max_tokens: o.maxTokens || 2000,\n    system: QL_SYSTEM_PROMPT,\n    output_config: { effort: o.effort || 'low' },\n    messages: [{ role: 'user', content: userText }]\n  };\n}\n\n/** Pull the assistant's text out of a Messages API response. */\nfunction textFromResponse(response) {\n  var blocks = (response && response.content) || [];\n  var out = [];\n  for (var i = 0; i < blocks.length; i++) {\n    // Skip thinking blocks; take the visible answer only.\n    if (blocks[i] && blocks[i].type === 'text' && blocks[i].text) out.push(blocks[i].text);\n  }\n  return out.join('\\n').trim();\n}\n\n/** Find the first balanced {...} in a string, tolerating a stray code fence. */\nfunction extractJson(text) {\n  if (!text) return null;\n  var cleaned = String(text).replace(/```(?:json)?/gi, '');\n  var start = cleaned.indexOf('{');\n  if (start === -1) return null;\n  var depth = 0;\n  var inString = false;\n  var escaped = false;\n  for (var i = start; i < cleaned.length; i++) {\n    var ch = cleaned[i];\n    if (escaped) { escaped = false; continue; }\n    if (ch === '\\\\') { escaped = true; continue; }\n    if (ch === '\"') { inString = !inString; continue; }\n    if (inString) continue;\n    if (ch === '{') depth++;\n    else if (ch === '}') {\n      depth--;\n      if (depth === 0) {\n        try {\n          return JSON.parse(cleaned.slice(start, i + 1));\n        } catch (e) {\n          return null;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nfunction oneOf(value, allowed, fallback) {\n  var v = qlTrim(value).toLowerCase();\n  for (var i = 0; i < allowed.length; i++) {\n    if (String(allowed[i]).toLowerCase() === v) return allowed[i];\n  }\n  return fallback;\n}\n\n/**\n * Turn a raw API response (or a failure) into a verdict we are willing to\n * write to Airtable.\n *\n * Every unhappy path lands on \"Unsure\", never \"No\". A model that returns\n * garbage, an API that 500s, a page we could not read — none of those are\n * evidence that the company is a bad fit, and treating them as such would\n * silently delete leads.\n */\nfunction parseVerdict(response, opts) {\n  var o = opts || {};\n\n  if (o.httpError || !response) {\n    return unsure('Qualification API unreachable: ' + String(o.httpError || 'no response').slice(0, 120));\n  }\n  if (response.type === 'error' || response.error) {\n    var msg = (response.error && (response.error.message || response.error.type)) || 'API error';\n    return unsure('Qualification API error: ' + String(msg).slice(0, 120));\n  }\n  if (response.stop_reason === 'refusal') {\n    return unsure('Model declined to classify this page.');\n  }\n\n  var parsed = extractJson(textFromResponse(response));\n  if (!parsed || typeof parsed !== 'object') {\n    return unsure('Model did not return usable JSON.');\n  }\n\n  var fit = oneOf(parsed.fit, QL_VERDICTS, null);\n  if (!fit) return unsure('Model returned an unrecognized verdict.');\n\n  var usage = response.usage || {};\n  return {\n    fit: fit,\n    category: oneOf(parsed.category, QL_CATEGORIES, 'unknown'),\n    size: oneOf(parsed.size, QL_SIZES, 'unknown'),\n    doesKitchens: parsed.does_kitchens === true,\n    doesBaths: parsed.does_baths === true,\n    hasExistingCrm: parsed.has_existing_crm === true,\n    reason: qlTrim(parsed.reason).slice(0, 300) || 'No reason given.',\n    inputTokens: Number(usage.input_tokens) || 0,\n    outputTokens: Number(usage.output_tokens) || 0,\n    ok: true\n  };\n\n  function unsure(reason) {\n    return {\n      fit: 'Unsure',\n      category: 'unknown',\n      size: 'unknown',\n      doesKitchens: false,\n      doesBaths: false,\n      hasExistingCrm: false,\n      reason: reason,\n      inputTokens: 0,\n      outputTokens: 0,\n      ok: false\n    };\n  }\n}\n\n/** Rough USD cost of one classification, for the run summary. */\nfunction estimateCost(inputTokens, outputTokens, pricing) {\n  var p = pricing || { inputPerMillion: 2.0, outputPerMillion: 10.0 }; // claude-sonnet-5\n  return (inputTokens / 1e6) * p.inputPerMillion + (outputTokens / 1e6) * p.outputPerMillion;\n}\n\n/**\n * Airtable formula for leads that still need checking.\n *\n * Only leads that have not been contacted yet: re-qualifying someone already\n * mid-sequence changes nothing, because Workflow 1 will not stop a sequence on\n * a fit verdict — only on a reply or an opt-out.\n */\nfunction qualifyFetchFormula() {\n  return [\n    'AND(',\n    '  {Email} != \"\",',\n    '  OR({Fit} = \"\", {Fit} = \"Unchecked\"),',\n    '  OR({Status} = \"\", {Status} = \"New\", {Status} = \"Queued\")',\n    ')'\n  ].join('').replace(/\\s+/g, ' ');\n}\n\n/** Normalize one Airtable record for the qualification pass. */\nfunction normalizeForQualify(record) {\n  var f = (record && record.fields) || {};\n  return {\n    recordId: record && record.id,\n    companyName: qlTrim(f['Company Name']),\n    email: qlTrim(f['Email']).toLowerCase(),\n    city: qlTrim(f['City']),\n    website: qlTrim(f['Website']),\n    fit: qlTrim(f['Fit']),\n    status: qlTrim(f['Status'])\n  };\n}\n\n/**\n * Build a run's worth of work.\n *\n * Two leads at the same domain (two contacts at one company) only need one\n * page fetch and one API call; the second inherits the first's verdict, which\n * is both cheaper and more consistent.\n */\nfunction buildQualifyQueue(records, ctx) {\n  var c = ctx || {};\n  var cap = Number(c.perRunCap) > 0 ? Math.floor(Number(c.perRunCap)) : 50;\n\n  var list = [];\n  var incoming = records || [];\n  for (var i = 0; i < incoming.length; i++) {\n    if (incoming[i] && incoming[i].id) list.push(normalizeForQualify(incoming[i]));\n  }\n\n  var queue = [];\n  var skipped = [];\n  var seenDomain = {};\n\n  for (var n = 0; n < list.length; n++) {\n    var lead = list[n];\n    var resolved = resolveUrl(lead);\n\n    if (!resolved.url) {\n      // Not a rejection — we simply cannot look. Mark it and move on.\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        fit: 'Unsure',\n        reason: resolved.reason || 'No website could be resolved.',\n        unresolvable: true\n      });\n      continue;\n    }\n\n    var host = resolved.url.replace(/^https?:\\/\\//i, '').split('/')[0].toLowerCase();\n    if (seenDomain[host]) {\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        reason: 'Same domain as record ' + seenDomain[host] + ' in this run.',\n        duplicateOf: seenDomain[host],\n        unresolvable: false\n      });\n      continue;\n    }\n    seenDomain[host] = lead.recordId;\n\n    lead.qualifyUrl = resolved.url;\n    lead.urlSource = resolved.source;\n    lead.host = host;\n    queue.push(lead);\n  }\n\n  var overflow = queue.slice(cap);\n  for (var o = 0; o < overflow.length; o++) {\n    skipped.push({\n      recordId: overflow[o].recordId,\n      email: overflow[o].email,\n      reason: 'Over the ' + cap + '-per-run cap; picked up next run.',\n      unresolvable: false\n    });\n  }\n\n  var final = queue.slice(0, cap);\n  for (var q = 0; q < final.length; q++) {\n    final[q].position = q + 1;\n    final[q].queueSize = final.length;\n  }\n\n  return {\n    queue: final,\n    skipped: skipped,\n    stats: {\n      fetched: list.length,\n      resolvable: queue.length,\n      queued: final.length,\n      skipped: skipped.length,\n      cap: cap\n    }\n  };\n}\n\n// ----- node body: src/nodes/w3-06-parse-verdict.js -----\n\n// n8n Code node — \"Parse Verdict\" (Run Once for All Items)\n//\n// Every failure path here resolves to \"Unsure\", never \"No\". An API outage, a\n// refusal, or malformed JSON is not evidence that a company is a bad fit, and\n// treating it as such would silently delete good leads.\n\nvar lead = $('Read Page').first().json;\nvar res = $input.first().json || {};\n\nvar httpError = res.error && !res.content ? res.error : null;\nvar verdict = parseVerdict(httpError ? null : res, { httpError: httpError });\n\nconsole.log('[' + lead.runId + '] ' + (lead.host || lead.qualifyUrl) + ' -> ' +\n  verdict.fit + ' (' + verdict.category + ') :: ' + verdict.reason);\n\nreturn [{ json: Object.assign({}, lead, { route: 'commit', verdict: verdict }) }];\n"
+      },
+      "id": "Parse Verdict",
+      "name": "Parse Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        -60
+      ],
+      "notes": "Any failure resolves to Unsure, never No. An outage must not delete leads.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-07-commit.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- node body: src/nodes/w3-07-commit.js -----\n\n// n8n Code node — \"Build Fit Commit\" (Run Once for All Items)\n//\n// One Airtable PATCH per lead. `Fit Checked At` is always written, even on an\n// \"Unsure\", so a lead we could not read is not re-attempted every hour.\n\nvar cfg = $('W3 Config').first().json.cfg;\nvar lead = $input.first().json;\nvar v = lead.verdict || {};\n\nvar reason = v.reason || 'No reason recorded.';\nif (v.ok) {\n  var facts = [];\n  if (v.category && v.category !== 'unknown') facts.push(v.category);\n  if (v.size && v.size !== 'unknown') facts.push(v.size);\n  if (v.doesKitchens) facts.push('kitchens');\n  if (v.doesBaths) facts.push('baths');\n  if (v.hasExistingCrm) facts.push('has booking/CRM');\n  if (facts.length) reason = reason + '  [' + facts.join(' · ') + ']';\n}\n\nreturn [{\n  json: {\n    runId: lead.runId,\n    recordId: lead.recordId,\n    email: lead.email,\n    host: lead.host || null,\n    url: lead.qualifyUrl || null,\n    fit: v.fit || 'Unsure',\n    category: v.category || 'unknown',\n    ok: v.ok === true,\n    inputTokens: v.inputTokens || 0,\n    outputTokens: v.outputTokens || 0,\n    patchUrl: cfg.airtableApiBase + '/' + cfg.baseId + '/' +\n      encodeURIComponent(cfg.tableName) + '/' + lead.recordId,\n    patchBody: {\n      fields: {\n        'Fit': v.fit || 'Unsure',\n        'Fit Reason': reason.slice(0, 900),\n        'Fit Checked At': new Date().toISOString()\n      },\n      typecast: true\n    }\n  }\n}];\n"
+      },
+      "id": "Build Fit Commit",
+      "name": "Build Fit Commit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2620,
+        180
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "PATCH",
+        "url": "={{ $json.patchUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patchBody) }}",
+        "contentType": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "Save Fit to Airtable",
+      "name": "Save Fit to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2840,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_AIRTABLE_CRED_ID",
+          "name": "Airtable PAT (Header Auth)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "notes": "Writes Fit / Fit Reason / Fit Checked At. Nothing else is touched.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "'use strict';\n/* =========================================================================\n * GENERATED — do not edit in the n8n UI.\n * Source: src/nodes/w3-08-summary.js + src/lib/{qualify}.js\n * Edit the source and run `npm run build`; the tests cover this code.\n * ========================================================================= */\n\n// ----- inlined: src/lib/qualify.js -----\n/**\n * qualify.js — the lead qualification pass (Workflow 3).\n *\n * What this does and, more importantly, what it does NOT do.\n *\n * It reads a company's website and decides whether they belong on the list at\n * all. It does not write, suggest, or influence a single word of the email.\n * That separation is deliberate:\n *\n *  - Generated openers (\"I came across your portfolio of transitional kitchen\n *    remodels...\") are the most recognizable pattern in cold email. They read\n *    as more of a pitch, not less.\n *  - Anything a model writes into a live email is untestable. The rest of this\n *    system is deterministic and covered by tests; a hallucinated detail in a\n *    cold email is not recoverable.\n *  - Targeting is where the leverage actually is at 30 sends/day. Not sending\n *    to a roofer beats any amount of clever phrasing.\n *\n * So the model answers narrow factual questions, the answer lands in a column,\n * and Workflow 1 skips the clear mismatches. Fixed copy, better list.\n *\n * FAIL-OPEN, everywhere. A dead site, a timeout, an API outage, a blocked\n * scraper — all resolve to \"Unsure\", which is still contacted. Only an\n * explicit \"No\" is skipped. Never running Workflow 3 at all leaves Workflow 1\n * behaving exactly as it did before.\n */\n\n// This module deliberately depends on NOTHING else. Reaching for templates.js\n// (which has an identical whitespace helper) would inline the entire email copy\n// into Workflow 3's nodes, and the one property this workflow must have is that\n// the model cannot reach a single word that goes to a prospect.\n\n/** Mailbox providers whose domain tells us nothing about the business. */\nvar QL_FREEMAIL = [\n  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'hotmail.com',\n  'outlook.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com',\n  'mac.com', 'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',\n  'bellsouth.net', 'cox.net', 'charter.net', 'earthlink.net', 'protonmail.com',\n  'proton.me', 'gmx.com', 'mail.com', 'yandex.com', 'zoho.com'\n];\n\nvar QL_VERDICTS = ['Yes', 'Unsure', 'No'];\n\nvar QL_CATEGORIES = [\n  'kitchen_bath_remodeler', 'general_contractor', 'handyman',\n  'supplier_showroom', 'designer_only', 'other_trade', 'not_a_business',\n  'unknown'\n];\n\nvar QL_SIZES = ['solo', 'small_team', 'established', 'unknown'];\n\nfunction qlTrim(v) {\n  return v === null || v === undefined ? '' : String(v).trim();\n}\n\n/** Collapse whitespace and strip control characters. Local by design. */\nfunction qlTidy(value) {\n  if (value === null || value === undefined) return '';\n  return String(value)\n    .replace(/[\\u0000-\\u001F\\u007F]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n/** Domain half of an email address, lowercased. */\nfunction domainOf(email) {\n  var at = qlTrim(email).toLowerCase().split('@');\n  return at.length === 2 && at[1] ? at[1] : null;\n}\n\nfunction isFreemail(email) {\n  var d = domainOf(email);\n  return d ? QL_FREEMAIL.indexOf(d) !== -1 : false;\n}\n\n/**\n * Where to look for this company's site.\n *\n * A `Website` column wins if the user has one. Otherwise the email domain is a\n * good guess for a small contractor — dana@mapleridgekitchens.com is almost\n * certainly mapleridgekitchens.com. A free mailbox tells us nothing, so those\n * leads are left unchecked rather than guessed at.\n */\nfunction resolveUrl(lead) {\n  var explicit = qlTrim(lead && (lead.website || lead['Website'] || lead['Site'] || lead['URL']));\n  if (explicit) {\n    var url = explicit;\n    if (!/^https?:\\/\\//i.test(url)) url = 'https://' + url.replace(/^\\/+/, '');\n    if (/^https?:\\/\\/[^\\s/.]+\\.[^\\s/]{2,}/i.test(url)) {\n      return { url: url.split('#')[0], source: 'website-column' };\n    }\n    return { url: null, source: 'website-column', reason: 'Website column is not a usable URL.' };\n  }\n\n  var email = qlTrim(lead && (lead.email || lead['Email']));\n  if (!email) return { url: null, source: 'none', reason: 'No website and no email address.' };\n  if (isFreemail(email)) {\n    return { url: null, source: 'freemail', reason: 'Free mailbox (' + domainOf(email) + ') — no company site to read.' };\n  }\n  var d = domainOf(email);\n  if (!d || d.indexOf('.') === -1) {\n    return { url: null, source: 'email-domain', reason: 'Email domain is unusable.' };\n  }\n  return { url: 'https://' + d, source: 'email-domain' };\n}\n\n/**\n * HTML -> readable text.\n *\n * Scripts, styles, nav chrome and SVG are dropped first: they are most of the\n * bytes and none of the signal, and every token we send costs money.\n */\nfunction htmlToText(html, maxChars) {\n  var limit = maxChars || 6000;\n  var text = String(html || '');\n\n  var title = '';\n  var titleMatch = /<title[^>]*>([\\s\\S]{0,300}?)<\\/title>/i.exec(text);\n  if (titleMatch) title = titleMatch[1];\n\n  var description = '';\n  var descMatch = /<meta[^>]+name=[\"']description[\"'][^>]*content=[\"']([\\s\\S]{0,400}?)[\"']/i.exec(text);\n  if (descMatch) description = descMatch[1];\n\n  var body = text\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<!--[\\s\\S]*?-->/g, ' ')\n    .replace(/<\\/(p|div|li|h[1-6]|tr|section|article)>/gi, '\\n')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&quot;/gi, '\"')\n    .replace(/[ \\t ]+/g, ' ')\n    .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n    .trim();\n\n  var head = [];\n  if (title) head.push('PAGE TITLE: ' + qlTidy(title));\n  if (description) head.push('META DESCRIPTION: ' + qlTidy(description));\n  var joined = (head.length ? head.join('\\n') + '\\n\\n' : '') + body;\n\n  return {\n    title: qlTidy(title),\n    description: qlTidy(description),\n    text: joined.slice(0, limit),\n    truncated: joined.length > limit,\n    originalLength: joined.length\n  };\n}\n\n/**\n * Is there enough on the page to judge anything?\n * A parked domain, a JS-only shell or a 404 gives us nothing, and asking the\n * model to guess from 40 words produces confident nonsense.\n */\nfunction isUsablePage(page, minChars) {\n  var min = minChars || 200;\n  if (!page || !page.text) return false;\n  var words = page.text.replace(/\\s+/g, ' ').trim();\n  if (words.length < min) return false;\n  if (/domain (is )?(for sale|parked)|buy this domain|coming soon|under construction|website is being/i.test(words.slice(0, 600))) {\n    return false;\n  }\n  return true;\n}\n\nvar QL_SYSTEM_PROMPT = [\n  'You qualify leads for a B2B outreach list. You are shown text scraped from',\n  'one company website and you decide whether that company belongs on the list.',\n  '',\n  'The list targets KITCHEN AND BATH REMODELING CONTRACTORS in the US who:',\n  '  - sell and install full kitchen and/or bathroom remodels for homeowners, and',\n  '  - are large enough to run a quoting/estimating process (not a lone handyman).',\n  '',\n  'Answer \"No\" when the company is any of:',\n  '  - a supplier, showroom or fabricator that does not install',\n  '  - a handyman or odd-jobs service',\n  '  - an interior designer or architect who does not do the build',\n  '  - an unrelated trade (roofing, HVAC, landscaping, plumbing-only, electrical,',\n  '    flooring-only, painting, pools, restoration, cleaning)',\n  '  - a franchise portal, directory, marketplace or lead-gen site',\n  '  - a parked, dead or non-business page',\n  '',\n  'Answer \"Unsure\" when the page is too thin or too ambiguous to tell.',\n  '',\n  'Be strict. A wrong \"Yes\" wastes a send and risks a spam complaint; a wrong',\n  '\"No\" only costs one lead. Judge ONLY from the text shown - never guess from',\n  'the company name, and never invent details that are not on the page.',\n  '',\n  'Reply with a single JSON object and nothing else. No prose, no code fence:',\n  '{',\n  '  \"fit\": \"Yes\" | \"Unsure\" | \"No\",',\n  '  \"category\": \"kitchen_bath_remodeler\" | \"general_contractor\" | \"handyman\" |',\n  '              \"supplier_showroom\" | \"designer_only\" | \"other_trade\" |',\n  '              \"not_a_business\" | \"unknown\",',\n  '  \"size\": \"solo\" | \"small_team\" | \"established\" | \"unknown\",',\n  '  \"does_kitchens\": true | false,',\n  '  \"does_baths\": true | false,',\n  '  \"has_existing_crm\": true | false,',\n  '  \"reason\": \"<= 20 words, quoting evidence from the page\"',\n  '}',\n  '',\n  'has_existing_crm means the page advertises online booking, instant quoting or',\n  'automated follow-up.'\n].join('\\n');\n\n/**\n * Build the Anthropic Messages API request body.\n *\n * Low effort: this is a short classification, not a reasoning problem, and\n * effort is the first thing that should come down on a per-lead cost.\n */\nfunction buildClaudeRequest(page, lead, opts) {\n  var o = opts || {};\n  var company = qlTrim(lead && (lead.companyName || lead['Company Name'])) || '(unknown)';\n  var city = qlTrim(lead && (lead.city || lead['City']));\n\n  var userText = [\n    'Company name on the list: ' + company,\n    city ? 'City on the list: ' + city : null,\n    'Website: ' + (lead.qualifyUrl || '(unknown)'),\n    '',\n    '--- BEGIN PAGE TEXT ---',\n    page.text,\n    '--- END PAGE TEXT ---'\n  ].filter(Boolean).join('\\n');\n\n  return {\n    model: o.model || 'claude-sonnet-5',\n    max_tokens: o.maxTokens || 2000,\n    system: QL_SYSTEM_PROMPT,\n    output_config: { effort: o.effort || 'low' },\n    messages: [{ role: 'user', content: userText }]\n  };\n}\n\n/** Pull the assistant's text out of a Messages API response. */\nfunction textFromResponse(response) {\n  var blocks = (response && response.content) || [];\n  var out = [];\n  for (var i = 0; i < blocks.length; i++) {\n    // Skip thinking blocks; take the visible answer only.\n    if (blocks[i] && blocks[i].type === 'text' && blocks[i].text) out.push(blocks[i].text);\n  }\n  return out.join('\\n').trim();\n}\n\n/** Find the first balanced {...} in a string, tolerating a stray code fence. */\nfunction extractJson(text) {\n  if (!text) return null;\n  var cleaned = String(text).replace(/```(?:json)?/gi, '');\n  var start = cleaned.indexOf('{');\n  if (start === -1) return null;\n  var depth = 0;\n  var inString = false;\n  var escaped = false;\n  for (var i = start; i < cleaned.length; i++) {\n    var ch = cleaned[i];\n    if (escaped) { escaped = false; continue; }\n    if (ch === '\\\\') { escaped = true; continue; }\n    if (ch === '\"') { inString = !inString; continue; }\n    if (inString) continue;\n    if (ch === '{') depth++;\n    else if (ch === '}') {\n      depth--;\n      if (depth === 0) {\n        try {\n          return JSON.parse(cleaned.slice(start, i + 1));\n        } catch (e) {\n          return null;\n        }\n      }\n    }\n  }\n  return null;\n}\n\nfunction oneOf(value, allowed, fallback) {\n  var v = qlTrim(value).toLowerCase();\n  for (var i = 0; i < allowed.length; i++) {\n    if (String(allowed[i]).toLowerCase() === v) return allowed[i];\n  }\n  return fallback;\n}\n\n/**\n * Turn a raw API response (or a failure) into a verdict we are willing to\n * write to Airtable.\n *\n * Every unhappy path lands on \"Unsure\", never \"No\". A model that returns\n * garbage, an API that 500s, a page we could not read — none of those are\n * evidence that the company is a bad fit, and treating them as such would\n * silently delete leads.\n */\nfunction parseVerdict(response, opts) {\n  var o = opts || {};\n\n  if (o.httpError || !response) {\n    return unsure('Qualification API unreachable: ' + String(o.httpError || 'no response').slice(0, 120));\n  }\n  if (response.type === 'error' || response.error) {\n    var msg = (response.error && (response.error.message || response.error.type)) || 'API error';\n    return unsure('Qualification API error: ' + String(msg).slice(0, 120));\n  }\n  if (response.stop_reason === 'refusal') {\n    return unsure('Model declined to classify this page.');\n  }\n\n  var parsed = extractJson(textFromResponse(response));\n  if (!parsed || typeof parsed !== 'object') {\n    return unsure('Model did not return usable JSON.');\n  }\n\n  var fit = oneOf(parsed.fit, QL_VERDICTS, null);\n  if (!fit) return unsure('Model returned an unrecognized verdict.');\n\n  var usage = response.usage || {};\n  return {\n    fit: fit,\n    category: oneOf(parsed.category, QL_CATEGORIES, 'unknown'),\n    size: oneOf(parsed.size, QL_SIZES, 'unknown'),\n    doesKitchens: parsed.does_kitchens === true,\n    doesBaths: parsed.does_baths === true,\n    hasExistingCrm: parsed.has_existing_crm === true,\n    reason: qlTrim(parsed.reason).slice(0, 300) || 'No reason given.',\n    inputTokens: Number(usage.input_tokens) || 0,\n    outputTokens: Number(usage.output_tokens) || 0,\n    ok: true\n  };\n\n  function unsure(reason) {\n    return {\n      fit: 'Unsure',\n      category: 'unknown',\n      size: 'unknown',\n      doesKitchens: false,\n      doesBaths: false,\n      hasExistingCrm: false,\n      reason: reason,\n      inputTokens: 0,\n      outputTokens: 0,\n      ok: false\n    };\n  }\n}\n\n/** Rough USD cost of one classification, for the run summary. */\nfunction estimateCost(inputTokens, outputTokens, pricing) {\n  var p = pricing || { inputPerMillion: 2.0, outputPerMillion: 10.0 }; // claude-sonnet-5\n  return (inputTokens / 1e6) * p.inputPerMillion + (outputTokens / 1e6) * p.outputPerMillion;\n}\n\n/**\n * Airtable formula for leads that still need checking.\n *\n * Only leads that have not been contacted yet: re-qualifying someone already\n * mid-sequence changes nothing, because Workflow 1 will not stop a sequence on\n * a fit verdict — only on a reply or an opt-out.\n */\nfunction qualifyFetchFormula() {\n  return [\n    'AND(',\n    '  {Email} != \"\",',\n    '  OR({Fit} = \"\", {Fit} = \"Unchecked\"),',\n    '  OR({Status} = \"\", {Status} = \"New\", {Status} = \"Queued\")',\n    ')'\n  ].join('').replace(/\\s+/g, ' ');\n}\n\n/** Normalize one Airtable record for the qualification pass. */\nfunction normalizeForQualify(record) {\n  var f = (record && record.fields) || {};\n  return {\n    recordId: record && record.id,\n    companyName: qlTrim(f['Company Name']),\n    email: qlTrim(f['Email']).toLowerCase(),\n    city: qlTrim(f['City']),\n    website: qlTrim(f['Website']),\n    fit: qlTrim(f['Fit']),\n    status: qlTrim(f['Status'])\n  };\n}\n\n/**\n * Build a run's worth of work.\n *\n * Two leads at the same domain (two contacts at one company) only need one\n * page fetch and one API call; the second inherits the first's verdict, which\n * is both cheaper and more consistent.\n */\nfunction buildQualifyQueue(records, ctx) {\n  var c = ctx || {};\n  var cap = Number(c.perRunCap) > 0 ? Math.floor(Number(c.perRunCap)) : 50;\n\n  var list = [];\n  var incoming = records || [];\n  for (var i = 0; i < incoming.length; i++) {\n    if (incoming[i] && incoming[i].id) list.push(normalizeForQualify(incoming[i]));\n  }\n\n  var queue = [];\n  var skipped = [];\n  var seenDomain = {};\n\n  for (var n = 0; n < list.length; n++) {\n    var lead = list[n];\n    var resolved = resolveUrl(lead);\n\n    if (!resolved.url) {\n      // Not a rejection — we simply cannot look. Mark it and move on.\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        fit: 'Unsure',\n        reason: resolved.reason || 'No website could be resolved.',\n        unresolvable: true\n      });\n      continue;\n    }\n\n    var host = resolved.url.replace(/^https?:\\/\\//i, '').split('/')[0].toLowerCase();\n    if (seenDomain[host]) {\n      skipped.push({\n        recordId: lead.recordId,\n        email: lead.email,\n        reason: 'Same domain as record ' + seenDomain[host] + ' in this run.',\n        duplicateOf: seenDomain[host],\n        unresolvable: false\n      });\n      continue;\n    }\n    seenDomain[host] = lead.recordId;\n\n    lead.qualifyUrl = resolved.url;\n    lead.urlSource = resolved.source;\n    lead.host = host;\n    queue.push(lead);\n  }\n\n  var overflow = queue.slice(cap);\n  for (var o = 0; o < overflow.length; o++) {\n    skipped.push({\n      recordId: overflow[o].recordId,\n      email: overflow[o].email,\n      reason: 'Over the ' + cap + '-per-run cap; picked up next run.',\n      unresolvable: false\n    });\n  }\n\n  var final = queue.slice(0, cap);\n  for (var q = 0; q < final.length; q++) {\n    final[q].position = q + 1;\n    final[q].queueSize = final.length;\n  }\n\n  return {\n    queue: final,\n    skipped: skipped,\n    stats: {\n      fetched: list.length,\n      resolvable: queue.length,\n      queued: final.length,\n      skipped: skipped.length,\n      cap: cap\n    }\n  };\n}\n\n// ----- node body: src/nodes/w3-08-summary.js -----\n\n// n8n Code node — \"Qualification Summary\" (Run Once for All Items)\n//\n// Runs once after the loop drains. Reports what was judged and what it cost.\n\nvar cfg = $('W3 Config').first().json.cfg;\n\nvar results = [];\nfor (var run = 0; run < 1000; run++) {\n  var chunk;\n  try {\n    chunk = $('Build Fit Commit').all(0, run);\n  } catch (e) {\n    break;\n  }\n  if (!chunk || !chunk.length) break;\n  for (var k = 0; k < chunk.length; k++) results.push(chunk[k].json);\n}\n\nvar counts = { Yes: 0, Unsure: 0, No: 0 };\nvar byCategory = {};\nvar inputTokens = 0;\nvar outputTokens = 0;\nvar examples = [];\n\nfor (var i = 0; i < results.length; i++) {\n  var r = results[i];\n  if (counts[r.fit] === undefined) counts[r.fit] = 0;\n  counts[r.fit]++;\n  byCategory[r.category] = (byCategory[r.category] || 0) + 1;\n  inputTokens += r.inputTokens || 0;\n  outputTokens += r.outputTokens || 0;\n  if (r.fit === 'No' && examples.length < 8) {\n    examples.push((r.host || r.email) + ' — ' + r.category);\n  }\n}\n\nvar cost = estimateCost(inputTokens, outputTokens, cfg.pricing);\nvar judged = results.length;\nvar rejected = counts.No || 0;\nvar rejectRate = judged ? Math.round((rejected / judged) * 100) : 0;\n\nvar lines = [\n  ':mag: *Lead qualification — ' + judged + ' checked*',\n  '• Fit: *' + (counts.Yes || 0) + ' yes* · ' + (counts.Unsure || 0) + ' unsure · ' + rejected + ' no  (' + rejectRate + '% rejected)',\n  '• Cost: ~$' + cost.toFixed(3) + '  (' + inputTokens + ' in / ' + outputTokens + ' out tokens, ' + cfg.claudeModel + ')',\n  '• Only \"no\" is skipped by the sender. Unsure and unchecked leads are still contacted.'\n];\nif (examples.length) lines.push('Rejected: ```' + examples.join('\\n') + '```');\n\nconsole.log('[' + cfg.runId + '] judged=' + judged + ' yes=' + (counts.Yes || 0) +\n  ' unsure=' + (counts.Unsure || 0) + ' no=' + rejected + ' cost=$' + cost.toFixed(4));\n\nreturn [{\n  json: {\n    runId: cfg.runId,\n    judged: judged,\n    counts: counts,\n    byCategory: byCategory,\n    rejectRatePercent: rejectRate,\n    inputTokens: inputTokens,\n    outputTokens: outputTokens,\n    estimatedCostUsd: Number(cost.toFixed(4)),\n    slackPayload: { text: lines.join('\\n') },\n    notify: !!cfg.slackWebhookUrl && judged > 0\n  }\n}];\n"
+      },
+      "id": "Qualification Summary",
+      "name": "Qualification Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        -180
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.notify }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "Slack Configured?",
+      "name": "Slack Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        -180
+      ],
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "options": {},
+        "method": "POST",
+        "url": "={{ $('W3 Config').first().json.cfg.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackPayload) }}",
+        "contentType": "json"
+      },
+      "id": "Post Summary to Slack",
+      "name": "Post Summary to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2180,
+        -180
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "content": "## Workflow 3 — Lead Qualifier  *(optional)*\n\nReads each lead's website and writes a **Fit** verdict to Airtable. It decides **who** you email — it never writes a word of **what** you email.\n\n**Why not AI-personalized copy?** A generated opener (\"I came across your portfolio of transitional kitchen remodels...\") is the most recognizable pattern in cold email — it reads as *more* of a pitch, not less. And anything a model writes into a live send is untestable. Targeting is where the leverage is at 30 sends/day: not emailing a roofer beats any phrasing.\n\n**Fail-open, everywhere.** A dead site, a timeout, an API outage → `Unsure`, which is still contacted. Only an explicit `No` is skipped. Never running this workflow at all leaves Workflow 1 behaving exactly as before.",
+        "height": 400,
+        "width": 1300,
+        "color": 4
+      },
+      "id": "Note 6",
+      "name": "Note 6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Where the URL comes from\n1. a `Website` column, if you have one\n2. otherwise the email domain — `dana@mapleridgekitchens.com` → `mapleridgekitchens.com`\n\nFree mailboxes (gmail, yahoo, …) tell us nothing, so those leads are recorded as `Unsure` and contacted normally.",
+        "height": 240,
+        "width": 420,
+        "color": 5
+      },
+      "id": "Note 7",
+      "name": "Note 7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Cost\n`claude-sonnet-5` at low effort, ~1.5k input tokens per page:\n\n**≈ $4 per 1,000 leads.**\n\nCheaper than the verification credits saved on leads that were never a fit.",
+        "height": 200,
+        "width": 420,
+        "color": 3
+      },
+      "id": "Note 8",
+      "name": "Note 8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2620,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "W3 Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Run": {
+      "main": [
+        [
+          {
+            "node": "W3 Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "W3 Config": {
+      "main": [
+        [
+          {
+            "node": "Get Base Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Base Schema": {
+      "main": [
+        [
+          {
+            "node": "Plan Fit Columns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Fit Columns": {
+      "main": [
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Schema Changes": {
+      "main": [
+        [
+          {
+            "node": "Fit Columns Ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is a Change?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is a Change?": {
+      "main": [
+        [
+          {
+            "node": "Apply Fit Column Change",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Fit Column Change": {
+      "main": [
+        [
+          {
+            "node": "Loop Schema Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fit Columns Ready": {
+      "main": [
+        [
+          {
+            "node": "Fetch Unqualified Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Unqualified Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Qualification Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qualification Queue": {
+      "main": [
+        [
+          {
+            "node": "Anything to Check?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything to Check?": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Qualification Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Leads": {
+      "main": [
+        [
+          {
+            "node": "Qualification Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Readable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Readable?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fit Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Website": {
+      "main": [
+        [
+          {
+            "node": "Read Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Page": {
+      "main": [
+        [
+          {
+            "node": "Enough to Judge?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enough to Judge?": {
+      "main": [
+        [
+          {
+            "node": "Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fit Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Verdict": {
+      "main": [
+        [
+          {
+            "node": "Build Fit Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Fit Commit": {
+      "main": [
+        [
+          {
+            "node": "Save Fit to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Fit to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualification Summary": {
+      "main": [
+        [
+          {
+            "node": "Slack Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Configured?": {
+      "main": [
+        [
+          {
+            "node": "Post Summary to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "timezone": "America/New_York"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "kb-outreach"
+  },
+  "tags": [
+    {
+      "name": "kb-outreach"
+    }
+  ]
+}

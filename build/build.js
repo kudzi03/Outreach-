@@ -77,7 +77,10 @@ function readNode(name) {
 }
 
 /** Resolve lib dependencies (queue depends on dates) and keep a stable order. */
-const LIB_DEPS = { queue: ['dates'], templates: [], classify: [], schema: [], verify: [], dates: [] };
+const LIB_DEPS = {
+  queue: ['dates'], qualify: [],
+  templates: [], classify: [], schema: [], verify: [], dates: []
+};
 
 function resolveLibs(names) {
   const seen = new Set();

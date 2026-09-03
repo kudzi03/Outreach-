@@ -26,6 +26,8 @@ var SCHEMA_STATUS_CHOICES = [
   'Do Not Contact'
 ];
 
+var SCHEMA_FIT_CHOICES = ['Yes', 'Unsure', 'No', 'Unchecked'];
+
 // Columns owned by the user. Present here purely so we can assert we never
 // emit a mutation for them, and so we can warn loudly if one is missing.
 var SCHEMA_PROTECTED_FIELDS = ['First Name', 'Company Name', 'Email', 'City'];
@@ -103,11 +105,51 @@ function desiredFields(opts) {
       options: dateOpts,
       acceptableExistingTypes: ['dateTime', 'date', 'singleLineText']
     }
-  ];
+  ].concat(fitFields(dateOpts));
 
   void tz;
-  return o.manageOptional === false ? required : required.concat(optional);
+  return o.manageOptional === false
+    ? restrict(required, o.only)
+    : restrict(required.concat(optional), o.only);
 }
+
+/**
+ * Columns written by Workflow 3 (the qualification pass). Kept separate so
+ * Workflow 3 can provision just these three and run standalone.
+ */
+function fitFields(dateOpts) {
+  return [
+    {
+      name: 'Fit',
+      type: 'singleSelect',
+      description: 'Workflow 3 verdict: Yes | Unsure | No | Unchecked. Only "No" is skipped.',
+      options: { choices: SCHEMA_FIT_CHOICES.map(function (c) { return { name: c }; }) },
+      acceptableExistingTypes: ['singleSelect', 'singleLineText', 'multilineText']
+    },
+    {
+      name: 'Fit Reason',
+      type: 'multilineText',
+      description: 'One-line justification from the qualification pass, with evidence.',
+      acceptableExistingTypes: ['multilineText', 'singleLineText']
+    },
+    {
+      name: 'Fit Checked At',
+      type: 'dateTime',
+      description: 'UTC timestamp of the last qualification check.',
+      options: dateOpts || { dateFormat: { name: 'iso' }, timeFormat: { name: '24hour' }, timeZone: 'utc' },
+      acceptableExistingTypes: ['dateTime', 'date', 'singleLineText']
+    }
+  ];
+}
+
+/** Narrow a field list to a named subset, preserving order. */
+function restrict(fields, only) {
+  if (!only || !only.length) return fields;
+  var wanted = only.map(function (n) { return String(n).toLowerCase(); });
+  return fields.filter(function (f) { return wanted.indexOf(f.name.toLowerCase()) !== -1; });
+}
+
+
 
 /** Find a table by id or (case-insensitive) name in a Metadata API payload. */
 function findTable(metaResponse, tableIdOrName) {
@@ -203,7 +245,8 @@ function planSchema(metaResponse, tableIdOrName, opts) {
       if (spec.type === 'singleSelect') {
         var have = existingChoiceNames(existing);
         var haveLower = have.map(function (n) { return n.toLowerCase(); });
-        var missing = SCHEMA_STATUS_CHOICES.filter(function (c) {
+        var wantChoices = spec.name === 'Fit' ? SCHEMA_FIT_CHOICES : SCHEMA_STATUS_CHOICES;
+        var missing = wantChoices.filter(function (c) {
           return haveLower.indexOf(c.toLowerCase()) === -1;
         });
         if (missing.length) {
@@ -262,6 +305,8 @@ function coerceStatusValue(value, allowedChoices) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SCHEMA_STATUS_CHOICES: SCHEMA_STATUS_CHOICES,
+    SCHEMA_FIT_CHOICES: SCHEMA_FIT_CHOICES,
+    fitFields: fitFields,
     SCHEMA_PROTECTED_FIELDS: SCHEMA_PROTECTED_FIELDS,
     desiredFields: desiredFields,
     findTable: findTable,
